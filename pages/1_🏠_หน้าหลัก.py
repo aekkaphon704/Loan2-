@@ -203,7 +203,7 @@ else:
                 interest_paid = st.number_input(
                     "ชำระดอกเบี้ย (ระบบกรอกอัตโนมัติ)", 
                     min_value=0.0, 
-                    value=prefilled_interest, # <-- กรอกอัตโนมัติ!
+                    value=max(0.0, prefilled_interest), # <-- กรอกอัตโนมัติ!
                     step=100.0
                 )
             with col_amount2:
@@ -269,4 +269,5 @@ if 'receipt_data' in st.session_state and st.session_state['receipt_data']:
     if st.button("เริ่มการชำระเงินครั้งใหม่"):
         del st.session_state['receipt_data']
         st.rerun()
+
 st.markdown("**ระบบมีปัญหาติดต่อ FB : เอกพล  แข็งแรง**")
