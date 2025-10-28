@@ -4,7 +4,7 @@ import gsheet_utils
 import pdf_utils
 from datetime import datetime, date
 from babel.dates import format_date
-
+from pytz import timezone
 # --- 1. ค่าคงที่และพจนานุกรม ---
 THAI_HEADERS = {
     "MemberID": "รหัสสมาชิก", "Name": "ชื่อ-สกุล", "AddressNo": "บ้านเลขที่",
@@ -90,7 +90,8 @@ if submitted:
     elif not village or not sub_district or not district or not province:
         st.warning("กรุณากรอกข้อมูลที่อยู่ให้ครบถ้วน (เลือก หรือ พิมพ์ใหม่)")
     else:
-        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") # <-- รับค่าวันที่ปัจจุบัน
+        bangkok_tz = timezone("Asia/Bangkok")
+        timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S") # <-- รับค่าวันที่ปัจจุบัน
         dob_str = dob.strftime("%Y-%m-%d") if dob else None
         
         new_row_data = [
@@ -271,3 +272,4 @@ if 'receipt_data' in st.session_state and st.session_state['receipt_data']:
         st.rerun()
 
 st.markdown("**ระบบมีปัญหาติดต่อ FB : เอกพล  แข็งแรง**")
+
