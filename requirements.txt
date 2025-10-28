@@ -4,3 +4,4 @@ pandas
 babel
 fpdf2[text-shaping]
 uharfbuzz
+pytz
