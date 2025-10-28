@@ -2,6 +2,7 @@
 import streamlit as st
 import gsheet_utils
 from datetime import datetime
+from pytz import timezone
 
 # --- Session State Setup ---
 if 'confirm_delete_id' not in st.session_state:
@@ -78,7 +79,8 @@ if not members_df.empty:
                 st.session_state.confirm_delete_id = None 
                 st.session_state.confirm_delete_name = None
                 
-                timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") # <-- รับค่าวันที่ปัจจุบัน
+                bangkok_tz = timezone("Asia/Bangkok")
+                timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")# <-- รับค่าวันที่ปัจจุบัน
                 dob_str = dob.strftime("%Y-%m-%d") if dob else None
                 
                 updates = {
@@ -122,4 +124,5 @@ if not members_df.empty:
                         st.session_state.confirm_delete_name = None
                         st.rerun()
 else:
+
     st.info("ยังไม่มีข้อมูลสมาชิกในระบบ")
