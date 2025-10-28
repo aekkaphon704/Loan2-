@@ -1,0 +1,5 @@
+streamlit
+gspread
+pandas
+babel
+fpdf2[text-shaping]
