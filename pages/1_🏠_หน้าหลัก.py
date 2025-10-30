@@ -5,6 +5,7 @@ import pdf_utils
 from datetime import datetime, date
 from babel.dates import format_date
 from pytz import timezone
+import pandas as pd # เพิ่ม import pandas
 
 # --- 1. ค่าคงที่และพจนานุกรม ---
 THAI_HEADERS = {
@@ -38,6 +39,9 @@ def get_address_suggestions(_sh):
         "districts": sorted(df["District"].dropna().unique().tolist()),
         "provinces": sorted(df["Province"].dropna().unique().tolist())
     }
+
+def safe_float(value):
+    return float(value) if value not in [None, ''] else 0.0
 
 # --- 3. เชื่อมต่อและเตรียมข้อมูล ---
 _sh = gsheet_utils.connect_to_sheet()
@@ -119,7 +123,10 @@ else:
     display_df = members_df.rename(columns=THAI_HEADERS)
     
     if "หุ้นสะสม (บาท)" in display_df.columns:
-        display_df.loc[:, "หุ้น (หน่วย)"] = (display_df["หุ้นสะสม (บาท)"] / 50).astype(int)
+        # ใช้ pd.to_numeric เพื่อแปลงอย่างปลอดภัย
+        numeric_shares = pd.to_numeric(display_df["หุ้นสะสม (บาท)"], errors='coerce')
+        safe_shares = numeric_shares.fillna(0)
+        display_df.loc[:, "หุ้น (หน่วย)"] = (safe_shares / 50).astype(int)
     
     display_df.index = range(1, len(display_df) + 1)
     display_df.index.name = "ลำดับ"
@@ -155,6 +162,7 @@ else:
     if selected_name:
         member_info = members_df_for_payment[members_df_for_payment["Name"] == selected_name].to_dict('records')[0]
         member_id = member_info["MemberID"]
+        bangkok_tz = timezone("Asia/Bangkok")
         
         transaction_type = st.radio(
             "เลือกประเภทธุรกรรม:",
@@ -172,8 +180,9 @@ else:
             if account_paid:
                 balance_col = f"Loan{account_paid}_Balance"
                 interest_due_col = f"Loan{account_paid}_InterestDue"
-                prefilled_balance = float(member_info.get(balance_col, 0))
-                prefilled_interest = float(member_info.get(interest_due_col, 0))
+                
+                prefilled_balance = safe_float(member_info.get(balance_col))
+                prefilled_interest = safe_float(member_info.get(interest_due_col))
 
                 st.subheader(f"สรุปยอดบัญชี (คุณ: {selected_name} | บัญชี: {account_paid})")
                 col_metric1, col_metric2 = st.columns(2)
@@ -199,7 +208,6 @@ else:
                     payment_submitted = st.form_submit_button("บันทึกการชำระเงิน")
                 
                 if payment_submitted:
-                    bangkok_tz = timezone("Asia/Bangkok")
                     timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
                     new_balance = prefilled_balance - principal_paid
                     new_interest_due = prefilled_interest - interest_paid
@@ -226,9 +234,9 @@ else:
                             receipt_line_items.append({'label': f"ชำระดอกเบี้ย บัญชี {account_paid}", 'amount': interest_paid})
                         
                         receipt_balances = [
-                            {'label': 'ยอดกู้ บช.1 คงเหลือ', 'amount': latest_member_info.get('Loan1_Balance', 0)},
-                            {'label': 'ยอดกู้ บช.2 คงเหลือ', 'amount': latest_member_info.get('Loan2_Balance', 0)},
-                            {'label': 'ยอดกู้ บช.4 คงเหลือ', 'amount': latest_member_info.get('Loan4_Balance', 0)}
+                            {'label': 'ยอดกู้ บช.1 คงเหลือ', 'amount': safe_float(latest_member_info.get('Loan1_Balance'))},
+                            {'label': 'ยอดกู้ บช.2 คงเหลือ', 'amount': safe_float(latest_member_info.get('Loan2_Balance'))},
+                            {'label': 'ยอดกู้ บช.4 คงเหลือ', 'amount': safe_float(latest_member_info.get('Loan4_Balance'))}
                         ]
 
                         st.session_state['receipt_data'] = {
@@ -248,71 +256,96 @@ else:
             st.subheader(f"ซื้อหุ้นประจำปี (คุณ: {selected_name})")
             
             today = date.today()
-            last_purchase_str = member_info.get("LastSharePurchaseDate")
-            needs_to_buy = False
+            purchase_period_start = date(today.year, 10, 5) # (เดือน 11, วันที่ 5)
             
-            if not last_purchase_str or last_purchase_str == "":
-                needs_to_buy = True
-                st.warning(f"**สถานะ:** ยังไม่เคยซื้อหุ้นประจำปี")
-            else:
-                try:
-                    last_purchase_date = datetime.strptime(last_purchase_str, "%Y-%m-%d").date()
-                    if last_purchase_date.year < today.year:
-                        needs_to_buy = True
-                        st.warning(f"**สถานะ:** จำเป็นต้องซื้อหุ้นสำหรับปี {today.year} (ซื้อครั้งล่าสุดปี {last_purchase_date.year})")
-                    else:
-                        st.success(f"**สถานะ:** ซื้อหุ้นสำหรับปี {today.year} เรียบร้อยแล้ว (เมื่อวันที่ {format_thai_date(last_purchase_date)})")
-                except ValueError:
-                    needs_to_buy = True
-                    st.error("ไม่สามารถอ่านวันที่ซื้อหุ้นล่าสุดได้, กรุณาซื้อใหม่")
+            current_shares_baht = safe_float(member_info.get('Shares'))
+            current_shares_units = int(current_shares_baht / 50)
             
             col_share1, col_share2 = st.columns(2)
             with col_share1:
-                current_shares_baht = member_info.get('Shares', 0)
-                current_shares_units = int(current_shares_baht / 50)
                 st.metric("หุ้นสะสมปัจจุบัน", 
                           f"{current_shares_baht:,.0f} บาท", 
                           f"{current_shares_units} หุ้น")
             with col_share2:
                 st.metric("ยอดซื้อประจำปี", "100.00 บาท", "2 หุ้น x 50 บาท")
+            
+            if today < purchase_period_start:
+                st.error(f"ยังไม่ถึงรอบการซื้อหุ้นประจำปี")
+                st.info(f"รอบการซื้อหุ้นสำหรับปี {today.year} จะเริ่มในวันที่ 5 พฤศจิกายน {today.year} ครับ")
+                
+            else:
+                last_purchase_str = member_info.get("LastSharePurchaseDate")
+                needs_to_buy = False
+                
+                if not last_purchase_str or last_purchase_str == "":
+                    needs_to_buy = True
+                else:
+                    try:
+                        last_purchase_date = datetime.strptime(last_purchase_str, "%Y-%m-%d").date()
+                        if last_purchase_date.year < today.year:
+                            needs_to_buy = True
+                    except ValueError:
+                        needs_to_buy = True
+                
+                if needs_to_buy:
+                    st.warning(f"**สถานะ:** อยู่ในช่วงที่สามารถซื้อหุ้นรอบปี {today.year} ได้")
+                    
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        buy_button = st.button("ยืนยันการซื้อหุ้น (100 บาท)", type="primary", use_container_width=True)
+                    with col_btn2:
+                        no_buy_button = st.button("ไม่ต้องการซื้อหุ้นในปีนี้", use_container_width=True)
 
-            if needs_to_buy:
-                if st.button("ยืนยันการซื้อหุ้นประจำปี (100 บาท)", type="primary", use_container_width=True):
-                    with st.spinner("กำลังบันทึกการซื้อหุ้น..."):
-                        bangkok_tz = timezone("Asia/Bangkok")
-                        timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
-                        today_str = date.today().strftime("%Y-%m-%d")
+                    if buy_button:
+                        with st.spinner("กำลังบันทึกการซื้อหุ้น..."):
+                            timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
+                            today_str = date.today().strftime("%Y-%m-%d")
 
-                        new_share_balance = member_info.get('Shares', 0) + 100
-                        updates = {
-                            "Shares": new_share_balance,
-                            "LastSharePurchaseDate": today_str,
-                            "LastUpdated": timestamp_str
-                        }
-                        gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
+                            new_share_balance = current_shares_baht + 100
+                            updates = {
+                                "Shares": new_share_balance,
+                                "LastSharePurchaseDate": today_str,
+                                "LastUpdated": timestamp_str
+                            }
+                            gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
 
-                        transaction_id = f"S-{int(datetime.now().timestamp())}"
-                        history_row = [transaction_id, timestamp_str, member_id, 2, 100]
-                        gsheet_utils.add_row_to_sheet("ShareHistory", _sh, history_row)
-                        
-                        st.success("บันทึกการซื้อหุ้นเรียบร้อย!")
-                        
-                        latest_member_info = gsheet_utils.get_member_by_id(_sh, member_id)
-                        new_shares_baht = latest_member_info.get('Shares', 0)
-                        new_shares_units = int(new_shares_baht / 50)
+                            transaction_id = f"S-{int(datetime.now().timestamp())}"
+                            history_row = [transaction_id, timestamp_str, member_id, 2, 100, "Purchase"] # <-- เพิ่ม Type
+                            gsheet_utils.add_row_to_sheet("ShareHistory", _sh, history_row)
+                            
+                            st.success("บันทึกการซื้อหุ้นเรียบร้อย!")
+                            
+                            latest_member_info = gsheet_utils.get_member_by_id(_sh, member_id)
+                            st.session_state['receipt_data'] = {
+                                "member_info": latest_member_info,
+                                "payment_date": format_thai_date(date.today()),
+                                "line_items": [{'label': "ซื้อหุ้นประจำปี (2 หุ้น)", 'amount': 100.00}],
+                                "balance_summary": [
+                                    {'label': 'หุ้นสะสมคงเหลือ', 'amount': latest_member_info.get('Shares', 0), 'unit': 'บาท'},
+                                    {'label': 'จำนวนหุ้นคงเหลือ', 'amount': int(latest_member_info.get('Shares', 0) / 50), 'unit': 'หุ้น'}
+                                ]
+                            }
+                            st.rerun()
 
-                        st.session_state['receipt_data'] = {
-                            "member_info": latest_member_info,
-                            "payment_date": format_thai_date(date.today()),
-                            "line_items": [
-                                {'label': "ซื้อหุ้นประจำปี (2 หุ้น)", 'amount': 100.00}
-                            ],
-                            "balance_summary": [
-                                {'label': 'หุ้นสะสมคงเหลือ', 'amount': new_shares_baht, 'unit': 'บาท'},
-                                {'label': 'จำนวนหุ้นคงเหลือ', 'amount': new_shares_units, 'unit': 'หุ้น'}
-                            ]
-                        }
-                        st.rerun()
+                    if no_buy_button:
+                        with st.spinner("กำลังบันทึกการตัดสินใจ..."):
+                            timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
+                            today_str = date.today().strftime("%Y-%m-%d")
+                            
+                            updates = {
+                                "LastSharePurchaseDate": today_str,
+                                "LastUpdated": timestamp_str
+                            }
+                            gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
+                            
+                            transaction_id = f"S-{int(datetime.now().timestamp())}"
+                            history_row = [transaction_id, timestamp_str, member_id, 0, 0, "Declined"] # <-- บันทึกหลักฐาน
+                            gsheet_utils.add_row_to_sheet("ShareHistory", _sh, history_row)
+
+                            st.info(f"รับทราบการตัดสินใจ 'ไม่ซื้อหุ้น' ของคุณในปีนี้เรียบร้อยแล้ว (ปุ่มจะกลับมาอีกครั้งในปี {today.year + 1})")
+                            st.rerun()
+                else:
+                    st.success(f"**สถานะ:** คุณได้ดำเนินการ (ซื้อ หรือ ไม่ซื้อ) หุ้นสำหรับปี {today.year} เรียบร้อยแล้ว")
 
         # ------------------------------------
         #       กรณี "ฝากเงินสัจจะ"
@@ -320,7 +353,7 @@ else:
         elif transaction_type == "ฝากเงินสัจจะ":
             st.subheader(f"ฝากเงินออมสัจจะ (คุณ: {selected_name})")
             
-            current_savings = member_info.get('Savings', 0)
+            current_savings = safe_float(member_info.get('Savings'))
             st.metric("ยอดเงินฝากสัจจะปัจจุบัน", f"{current_savings:,.2f} บาท")
             
             with st.form("deposit_form"):
@@ -331,7 +364,6 @@ else:
 
             if deposit_submitted:
                 with st.spinner("กำลังบันทึกเงินฝาก..."):
-                    bangkok_tz = timezone("Asia/Bangkok")
                     timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
 
                     new_savings_balance = current_savings + deposit_amount
@@ -356,12 +388,12 @@ else:
                             {'label': "ฝากเงินออมสัจจะ", 'amount': deposit_amount}
                         ],
                         "balance_summary": [
-                            {'label': 'เงินฝากสัจจะคงเหลือ', 'amount': new_savings_balance, 'unit': 'บาท'}
+                            {'label': 'เงินฝากสัจจะคงเหลือ', 'amount': latest_member_info.get('Savings', 0), 'unit': 'บาท'}
                         ]
                     }
                     st.rerun()
 
-# --- 8. ส่วนแสดงปุ่มดาวน์โหลดใบเสร็จ ---
+# --- 8. ส่วนแสดงปุ่มดาวน์โหลดใบเสร็จ และ ปุ่มเริ่มใหม่ ---
 if 'receipt_data' in st.session_state and st.session_state['receipt_data']:
     receipt_info = st.session_state['receipt_data']
     st.info(f"ข้อมูลสำหรับสร้างใบเสร็จของ '{receipt_info['member_info']['Name']}' พร้อมแล้ว")
@@ -374,6 +406,10 @@ if 'receipt_data' in st.session_state and st.session_state['receipt_data']:
         file_name=f"Receipt_{receipt_info['member_info']['Name']}_{date.today().strftime('%Y%m%d')}.pdf",
         mime="application/pdf"
     )
-    if st.button("เริ่มธุรกรรมใหม่"):
-        del st.session_state['receipt_data']
+
+# --- ปุ่มเริ่มธุรกรรมใหม่ (อยู่นอก if) ---
+if selected_name: # จะแสดงปุ่มนี้ก็ต่อเมื่อมีการเลือกชื่อแล้ว
+    if st.button("เริ่มธุรกรรมใหม่ / ล้างข้อมูลใบเสร็จ"):
+        if 'receipt_data' in st.session_state:
+            del st.session_state['receipt_data']
         st.rerun()
