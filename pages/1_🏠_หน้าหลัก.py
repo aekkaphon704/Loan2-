@@ -256,7 +256,7 @@ else:
             st.subheader(f"ซื้อหุ้นประจำปี (คุณ: {selected_name})")
             
             today = date.today()
-            purchase_period_start = date(today.year, 10, 5) # (เดือน 11, วันที่ 5)
+            purchase_period_start = date(today.year, 11, 5) # (เดือน 11, วันที่ 5)
             
             current_shares_baht = safe_float(member_info.get('Shares'))
             current_shares_units = int(current_shares_baht / 50)
@@ -413,3 +413,4 @@ if selected_name: # จะแสดงปุ่มนี้ก็ต่อเม
         if 'receipt_data' in st.session_state:
             del st.session_state['receipt_data']
         st.rerun()
+
