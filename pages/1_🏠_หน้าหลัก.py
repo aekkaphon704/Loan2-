@@ -414,3 +414,6 @@ if selected_name: # จะแสดงปุ่มนี้ก็ต่อเม
             del st.session_state['receipt_data']
         st.rerun()
 
+
+st.markdown("""พัฒนาโดย เอกพล แข็งแรง""")
+
