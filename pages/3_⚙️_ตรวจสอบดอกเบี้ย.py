@@ -72,7 +72,7 @@ else:
     st.warning("ไม่พบข้อมูล 'LastCalc_Acc1_2' ใน SystemConfig, สมมติว่าเป็นการคำนวณครั้งแรก")
     # ใช้ค่าเริ่มต้น date(1900, 1, 1)
 
-due_date_acc1_2 = date(today.year, 10, 5) # (เดือน 11, วันที่ 5) - คุณสามารถแก้เป็น 10 เพื่อทดสอบ
+due_date_acc1_2 = date(today.year, 11, 5) # (เดือน 11, วันที่ 5) - คุณสามารถแก้เป็น 10 เพื่อทดสอบ
 
 if today >= due_date_acc1_2 and last_calc_acc1_2 < due_date_acc1_2:
     st.warning("ตรวจพบว่าถึงรอบคำนวณดอกเบี้ย บัญชี 1 และ 2 (5 พ.ย.)")
@@ -85,3 +85,4 @@ if today >= due_date_acc1_2 and last_calc_acc1_2 < due_date_acc1_2:
             # (ถ้า batch_calculate_interest ไม่สำเร็จ จะมี st.error แสดงจากในฟังก์ชันเอง)
 else:
     st.success("บัญชี 1, 2: ยังไม่ถึงรอบคำนวณ หรือ คำนวณสำหรับปีนี้ไปแล้ว")
+
