@@ -12,7 +12,7 @@ def format_thai_date_admin(dt):
         except ValueError: return dt # ถ้าแปลงไม่ได้ ก็แสดงค่าเดิม
     return format_date(dt, format='d MMMM yyyy', locale='th_TH')
 
-st.set_page_config(page_title="เครื่องมือแอดมิน", page_icon="⚙️", layout="centered")
+st.set_page_config(page_title="เครื่องมือแอดมิน", page_icon="⚙️", layout="wide")
 st.title("⚙️ เครื่องมือสำหรับผู้ดูแลระบบ")
 
 _sh = gsheet_utils.connect_to_sheet()
@@ -85,4 +85,5 @@ if today >= due_date_acc1_2 and last_calc_acc1_2 < due_date_acc1_2:
             # (ถ้า batch_calculate_interest ไม่สำเร็จ จะมี st.error แสดงจากในฟังก์ชันเอง)
 else:
     st.success("บัญชี 1, 2: ยังไม่ถึงรอบคำนวณ หรือ คำนวณสำหรับปีนี้ไปแล้ว")
+
 
