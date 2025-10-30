@@ -132,3 +132,5 @@ if not members_df.empty:
                         st.rerun()
 else:
     st.info("ยังไม่มีข้อมูลสมาชิกในระบบ")
+
+st.markdown("""พัฒนาโดย เอกพล แข็งแรง""")
