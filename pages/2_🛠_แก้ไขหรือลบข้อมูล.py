@@ -4,6 +4,16 @@ import gsheet_utils
 from datetime import datetime
 from pytz import timezone
 
+# --- 1. อัปเกรดพจนานุกรม ---
+THAI_HEADERS_REVERSE = {
+    "รหัสสมาชิก": "MemberID", "ชื่อ-สกุล": "Name", "บ้านเลขที่": "AddressNo",
+    "หมู่บ้าน": "Village", "ตำบล": "SubDistrict", "อำเภอ": "District",
+    "จังหวัด": "Province", "วันเกิด (ป-ด-ว)": "DOB", "เงินฝากสัจจะ": "Savings",
+    "หุ้นสะสม (บาท)": "Shares", # <-- แก้ไข
+    "ยอดกู้ บช.1": "Loan1_Balance", "ยอดกู้ บช.2": "Loan2_Balance", "ยอดกู้ บช.4": "Loan4_Balance",
+    "อัปเดตล่าสุด": "LastUpdated"
+}
+
 # --- Session State Setup ---
 if 'confirm_delete_id' not in st.session_state:
     st.session_state.confirm_delete_id = None
@@ -43,7 +53,6 @@ if not members_df.empty:
             with st.form("edit_form"):
                 dob_obj = datetime.strptime(member_data['DOB'], "%Y-%m-%d").date() if member_data.get('DOB') else None
                 
-                # Layout and Inputs inside the form
                 st.markdown("**ข้อมูลส่วนตัว**")
                 col_form_1, col_form_2 = st.columns(2)
                 with col_form_1:
@@ -63,7 +72,7 @@ if not members_df.empty:
                     loan1 = st.number_input("ยอดกู้ บช.1 (ตั้งต้น)", value=member_data.get('Loan1_Balance'))
                     loan4 = st.number_input("ยอดกู้ บช.4 (ตั้งต้น)", value=member_data.get('Loan4_Balance'))
                 with col_fin_2:
-                    shares = st.number_input("เงินหุ้น", value=member_data.get('Shares'))
+                    shares = st.number_input("เงินหุ้น (บาท)", value=member_data.get('Shares')) # <-- แก้ไข
                     loan2 = st.number_input("ยอดกู้ บช.2 (ตั้งต้น)", value=member_data.get('Loan2_Balance'))
                 
                 st.markdown("---")
@@ -73,14 +82,14 @@ if not members_df.empty:
                     save_button = st.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True)
                 with col_btn_2:
                     delete_button = st.form_submit_button("🗑️ ลบสมาชิกคนนี้", type="secondary", use_container_width=True)
-
+            
             # --- Logic after form submission ---
             if save_button:
                 st.session_state.confirm_delete_id = None 
                 st.session_state.confirm_delete_name = None
                 
                 bangkok_tz = timezone("Asia/Bangkok")
-                timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")# <-- รับค่าวันที่ปัจจุบัน
+                timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
                 dob_str = dob.strftime("%Y-%m-%d") if dob else None
                 
                 updates = {
@@ -88,7 +97,7 @@ if not members_df.empty:
                     "SubDistrict": sub_district, "District": district, "Province": province,
                     "DOB": dob_str, "Savings": savings, "Shares": shares,
                     "Loan1_Balance": loan1, "Loan2_Balance": loan2, "Loan4_Balance": loan4,
-                    "LastUpdated": timestamp_str # <-- เพิ่มวันที่ปัจจุบันเข้าไปในข้อมูลที่จะอัปเดต
+                    "LastUpdated": timestamp_str
                 }
                 
                 if gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates):
@@ -108,7 +117,6 @@ if not members_df.empty:
                 
                 confirm_col1, confirm_col2 = st.columns(2)
                 with confirm_col1:
-                    # This is a regular st.button, now correctly placed outside the form.
                     if st.button("🔴 ใช่, ฉันยืนยันการลบ", use_container_width=True, type="primary"):
                         if gsheet_utils.delete_row_by_id("Members", _sh, st.session_state.confirm_delete_id, "MemberID"):
                             st.success(f"ลบข้อมูลของ '{st.session_state.confirm_delete_name}' เรียบร้อยแล้ว")
@@ -118,11 +126,9 @@ if not members_df.empty:
                         else:
                             st.error("ไม่สามารถลบข้อมูลได้")
                 with confirm_col2:
-                    # This is also a regular st.button.
                     if st.button("🔵 ไม่, ยกเลิก", use_container_width=True, type="secondary"):
                         st.session_state.confirm_delete_id = None
                         st.session_state.confirm_delete_name = None
                         st.rerun()
 else:
-
     st.info("ยังไม่มีข้อมูลสมาชิกในระบบ")
