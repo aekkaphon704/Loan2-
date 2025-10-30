@@ -86,4 +86,5 @@ if today >= due_date_acc1_2 and last_calc_acc1_2 < due_date_acc1_2:
 else:
     st.success("บัญชี 1, 2: ยังไม่ถึงรอบคำนวณ หรือ คำนวณสำหรับปีนี้ไปแล้ว")
 
+st.markdown("""พัฒนาโดย เอกพล แข็งแรง""")
 
