@@ -3,7 +3,6 @@ import streamlit as st
 import gsheet_utils
 import pdf_utils
 from datetime import datetime, date, timedelta
-from babel.dates import format_date
 from pytz import timezone
 import pandas as pd
 import math
@@ -21,15 +20,18 @@ THAI_HEADERS = {
 # --- 2. การตั้งค่าและฟังก์ชัน Helper ---
 st.set_page_config(page_title="ระบบจัดการสมาชิก", page_icon="🗂️", layout="wide")
 
+# ฟังก์ชันแปลงวันที่เป็นภาษาไทย + ปี พ.ศ. (ค.ศ. + 543)
 def format_thai_date(dt):
-    if dt is None: return "ไม่ได้ระบุ"
+    if dt is None or dt == "": return "ไม่ได้ระบุ"
     if isinstance(dt, str):
         try: dt = datetime.strptime(dt, "%Y-%m-%d").date()
         except ValueError:
              try: dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S").date()
              except ValueError: return dt
-    if isinstance(dt, date):
-        return format_date(dt, format='d MMMM yyyy', locale='th_TH')
+    if isinstance(dt, date) or isinstance(dt, datetime):
+        thai_months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", 
+                       "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
+        return f"{dt.day} {thai_months[dt.month - 1]} {dt.year + 543}"
     return str(dt)
 
 @st.cache_data(ttl=60)
@@ -70,7 +72,7 @@ with st.form("add_member_form", clear_on_submit=True):
         province_select = st.selectbox("จังหวัด (เลือกจากที่มีอยู่)", [None] + address_data["provinces"], index=0, format_func=lambda x: "--- เลือก ---" if x is None else x)
         province_new = st.text_input("...หรือ พิมพ์จังหวัดใหม่ที่นี่")
         today = date.today()
-        dob = st.date_input("วันเดือนปีเกิด", value=None, format="DD/MM/YYYY",
+        dob = st.date_input("วันเดือนปีเกิด (ค.ศ.)", value=None, format="DD/MM/YYYY",
                             min_value=date(today.year - 100, 1, 1), max_value=today)
         member_id = f"M-{int(datetime.now().timestamp())}"
     st.subheader("ส่วนที่ 2: ข้อมูลการเงิน (เริ่มต้น)")
@@ -94,15 +96,10 @@ if submitted:
         timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
         dob_str = dob.strftime("%Y-%m-%d") if dob else None
 
-        # ลำดับคอลัมน์ตาม Sheet ของพี่:
-        # MemberID, Name, AddressNo, Village, SubDistrict, District, Province, DOB,
-        # Savings, Shares,
-        # LastUpdated, LastSharePurchaseDate
         new_row_data = [
             member_id, name, address_no, village, sub_district, district, province, dob_str,
             savings, shares,
-            timestamp_str, # <-- LastUpdated (ตำแหน่งที่ 11)
-            ""             # <-- LastSharePurchaseDate (ตำแหน่งที่ 12)
+            timestamp_str, ""
         ]
 
         if gsheet_utils.add_row_to_sheet("Members", _sh, new_row_data):
@@ -218,36 +215,77 @@ else:
                     principal_amount = safe_float(selected_loans_group['PrincipalAmount'].sum())
                     amount_paid_so_far = safe_float(selected_loans_group['AmountPaid'].sum())
                     interest_paid_so_far = safe_float(selected_loans_group['InterestPaid'].sum())
-                    remaining_principal = principal_amount - amount_paid_so_far
-                    interest_due_for_this_loan = principal_amount * 0.06
-                    remaining_interest = interest_due_for_this_loan - interest_paid_so_far
-                    loan_account_display = selected_loans_group.iloc[0]['LoanAccount']
+                    loan_account_display = str(selected_loans_group.iloc[0]['LoanAccount'])
 
                     st.info(f"สัญญาที่เลือก: ID {selected_loan_id} | บัญชี {loan_account_display}")
-                    col_m1, col_m2, col_m3 = st.columns(3)
-                    with col_m1: st.metric("เงินต้น (รวม)", f"{principal_amount:,.2f} บาท")
-                    with col_m2: st.metric("เงินต้นคงเหลือ (รวม)", f"{remaining_principal:,.2f} บาท")
-                    with col_m3: st.metric("ดอกเบี้ยที่ต้องชำระ (รวม)", f"{interest_due_for_this_loan:,.2f} บาท",
-                                           delta=f"{remaining_interest:,.2f} บาท ค้างชำระ" if remaining_interest > 0 else "ชำระครบแล้ว",
-                                           delta_color="inverse" if remaining_interest > 0 else "off")
-
+                    
                     with st.form("payment_form", clear_on_submit=True):
                         st.markdown("**กรอกข้อมูลการชำระเงิน (สำหรับสัญญานี้)**")
-                        payment_date = st.date_input("วันที่ชำระ", value=date.today(), format="DD/MM/YYYY")
-                        col_a1, col_a2 = st.columns(2)
-                        with col_a1:
-                            interest_paid_input = st.number_input("ชำระดอกเบี้ย",
-                                                              min_value=0.0,
-                                                              value=max(0.0, remaining_interest),
-                                                              step=10.0)
-                        with col_a2:
-                            principal_paid_input = st.number_input("ชำระเงินต้น",
-                                                               min_value=0.0,
-                                                               value=remaining_principal,
-                                                               step=100.0)
+                        payment_date = st.date_input("วันที่ชำระ (ค.ศ.)", value=date.today(), format="DD/MM/YYYY")
+                        
+                        # ========================================================
+                        # แยกตรรกะการแสดงผลระหว่าง "บัญชี 3" และ "บัญชีอื่นๆ"
+                        # ========================================================
+                        if "บัญชี 3" in loan_account_display:
+                            # คำนวณแบบ Flat Rate 13% (4 ปี = 48 งวด)
+                            total_interest_4_years = principal_amount * 0.13 * 4
+                            total_debt = principal_amount + total_interest_4_years
+                            monthly_installment = total_debt / 48
+                            
+                            total_paid_so_far = amount_paid_so_far + interest_paid_so_far
+                            remaining_total = total_debt - total_paid_so_far
+                            
+                            st.info(f"💡 **รายละเอียดบัญชี 3 (รายเดือน 48 งวด)**\n"
+                                    f"- ยอดส่งค่างวด: **{monthly_installment:,.2f}** บาท/เดือน\n"
+                                    f"- ยอดหนี้คงเหลือรวมทั้งหมด: **{remaining_total:,.2f}** บาท")
+                            
+                            pay_amount = st.number_input("จำนวนเงินรวมที่ต้องการชำระ (บาท)", 
+                                                         min_value=0.0, 
+                                                         max_value=float(remaining_total), 
+                                                         step=float(monthly_installment), 
+                                                         value=float(monthly_installment) if remaining_total >= monthly_installment else float(remaining_total))
+                            
+                        else:
+                            # บัญชี 1, 2, 4 (รายปี 6%)
+                            remaining_principal = principal_amount - amount_paid_so_far
+                            interest_due_for_this_loan = principal_amount * 0.06
+                            remaining_interest = interest_due_for_this_loan - interest_paid_so_far
+                            
+                            col_m1, col_m2, col_m3 = st.columns(3)
+                            with col_m1: st.metric("เงินต้น (รวม)", f"{principal_amount:,.2f} บาท")
+                            with col_m2: st.metric("เงินต้นคงเหลือ (รวม)", f"{remaining_principal:,.2f} บาท")
+                            with col_m3: st.metric("ดอกเบี้ยที่ต้องชำระ (รวม)", f"{interest_due_for_this_loan:,.2f} บาท",
+                                                   delta=f"{remaining_interest:,.2f} บาท ค้างชำระ" if remaining_interest > 0 else "ชำระครบแล้ว",
+                                                   delta_color="inverse" if remaining_interest > 0 else "off")
+                                                   
+                            col_a1, col_a2 = st.columns(2)
+                            with col_a1:
+                                pay_interest_input = st.number_input("ชำระดอกเบี้ย (บาท)",
+                                                                   min_value=0.0,
+                                                                   value=max(0.0, remaining_interest),
+                                                                   step=10.0)
+                            with col_a2:
+                                pay_principal_input = st.number_input("ชำระเงินต้น (บาท)",
+                                                                   min_value=0.0,
+                                                                   value=remaining_principal,
+                                                                   step=100.0)
+                                                                   
                         payment_submitted = st.form_submit_button("บันทึกการชำระเงิน")
 
                     if payment_submitted:
+                        # คำนวณสัดส่วนถ้าเป็นบัญชี 3 ก่อนเซฟลง Sheet
+                        if "บัญชี 3" in loan_account_display:
+                            if pay_amount > 0:
+                                ratio_principal = principal_amount / total_debt
+                                principal_paid_input = round(pay_amount * ratio_principal, 2)
+                                interest_paid_input = pay_amount - principal_paid_input # ส่วนต่างที่เหลือคือดอกเบี้ย
+                            else:
+                                principal_paid_input = 0.0
+                                interest_paid_input = 0.0
+                        else:
+                            principal_paid_input = pay_principal_input
+                            interest_paid_input = pay_interest_input
+
                         timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
 
                         transaction_id = f"T-{int(datetime.now().timestamp())}"
@@ -321,7 +359,7 @@ else:
 
             if today < purchase_period_start:
                 st.error(f"ยังไม่ถึงรอบการซื้อหุ้นประจำปี")
-                st.info(f"รอบการซื้อหุ้นสำหรับปี {today.year} จะเริ่มในวันที่ 5 พฤศจิกายน {today.year} ครับ")
+                st.info(f"รอบการซื้อหุ้นสำหรับปี พ.ศ. {today.year + 543} จะเริ่มในวันที่ 5 พฤศจิกายน {today.year + 543} ครับ")
 
             else:
                 last_purchase_str = member_info.get("LastSharePurchaseDate")
@@ -338,7 +376,7 @@ else:
                         needs_to_buy = True
 
                 if needs_to_buy:
-                    st.warning(f"**สถานะ:** อยู่ในช่วงที่สามารถซื้อหุ้นรอบปี {today.year} ได้")
+                    st.warning(f"**สถานะ:** อยู่ในช่วงที่สามารถซื้อหุ้นรอบปี พ.ศ. {today.year + 543} ได้")
 
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
@@ -392,10 +430,10 @@ else:
                             history_row = [transaction_id, timestamp_str, member_id, 0, 0, "Declined"]
                             gsheet_utils.add_row_to_sheet("ShareHistory", _sh, history_row)
 
-                            st.info(f"รับทราบการตัดสินใจ 'ไม่ซื้อหุ้น' ของคุณในปีนี้เรียบร้อยแล้ว (ปุ่มจะกลับมาอีกครั้งในปี {today.year + 1})")
+                            st.info(f"รับทราบการตัดสินใจ 'ไม่ซื้อหุ้น' ของคุณในปีนี้เรียบร้อยแล้ว (ปุ่มจะกลับมาอีกครั้งในปี พ.ศ. {today.year + 1 + 543})")
                             st.rerun()
                 else:
-                    st.success(f"**สถานะ:** คุณได้ดำเนินการ (ซื้อ หรือ ไม่ซื้อ) หุ้นสำหรับปี {today.year} เรียบร้อยแล้ว")
+                    st.success(f"**สถานะ:** คุณได้ดำเนินการ (ซื้อ หรือ ไม่ซื้อ) หุ้นสำหรับปี พ.ศ. {today.year + 543} เรียบร้อยแล้ว")
 
         # ------------------------------------
         #       กรณี "ฝากเงินสัจจะ"
@@ -408,7 +446,7 @@ else:
 
             with st.form("deposit_form"):
                 deposit_amount = st.number_input("จำนวนเงินที่ต้องการฝาก", min_value=1.0, step=50.0)
-                deposit_date = st.date_input("วันที่ฝาก", value=date.today(), format="DD/MM/YYYY")
+                deposit_date = st.date_input("วันที่ฝาก (ค.ศ.)", value=date.today(), format="DD/MM/YYYY")
 
                 deposit_submitted = st.form_submit_button("ยืนยันการฝากเงิน")
 
@@ -450,10 +488,14 @@ if 'receipt_data' in st.session_state and st.session_state['receipt_data']:
 
     pdf_bytes = pdf_utils.generate_receipt_pdf(receipt_info)
 
+    # เปลี่ยนชื่อไฟล์ดาวน์โหลดให้มีปี พ.ศ. ด้วย
+    today_for_filename = date.today()
+    be_filename_date = f"{today_for_filename.year + 543}{today_for_filename.strftime('%m%d')}"
+
     st.download_button(
         label="📄 ดาวน์โหลดใบเสร็จ (PDF)",
         data=bytes(pdf_bytes),
-        file_name=f"Receipt_{receipt_info['member_info']['Name']}_{date.today().strftime('%Y%m%d')}.pdf",
+        file_name=f"Receipt_{receipt_info['member_info']['Name']}_{be_filename_date}.pdf",
         mime="application/pdf"
     )
 
