@@ -122,7 +122,7 @@ if not members_df.empty:
                         st.session_state.confirm_delete_name = None
                         st.rerun()
 
-            # --- 2B. New Loan Contract Form (เปลี่ยนจาก st.form เป็นปุ่มธรรมดา เพื่อให้ Interactive) ---
+            # --- 2B. New Loan Contract Form ---
             st.markdown("---")
             st.subheader("💰 อนุมัติสัญญาเงินกู้ใหม่ (และยอดยกมา)")
             st.info("ระบุ 'วันที่เริ่มกู้' ระบบจะคำนวณวันหมดอายุสัญญาให้โดยอัตโนมัติ")
@@ -138,9 +138,8 @@ if not members_df.empty:
             
             with col_loan_2:
                 issue_date = st.date_input("วันที่ทำสัญญา / วันที่เริ่มกู้ (ปฏิทิน ค.ศ.)", value=date.today())
-                st.caption(f"ตรงกับ พ.ศ.: **{format_thai_date(issue_date)}**") # แสดง พ.ศ. ให้แอดมินดูทันที
+                st.caption(f"ตรงกับ พ.ศ.: **{format_thai_date(issue_date)}**") 
                 
-                # ส่วนรับข้อมูล "ยอดยกมา" (เด้งขึ้นมาทันทีเมื่อเลือกบัญชี 3)
                 is_carry_over = False
                 months_paid = 0
                 if loan_account == "บัญชี 3 (รายเดือน 4 ปี)":
@@ -148,7 +147,6 @@ if not members_df.empty:
                     if is_carry_over:
                         months_paid = st.number_input("จำนวนงวดที่ชำระไปแล้ว (งวด)", min_value=1, max_value=47, step=1, value=1)
 
-            # --- พรีวิวค่างวดสำหรับบัญชี 3 ---
             monthly_principal, monthly_interest = 0.0, 0.0
             if loan_account == "บัญชี 3 (รายเดือน 4 ปี)" and principal_amount_new > 0:
                 total_interest = principal_amount_new * 0.13 * 4
@@ -163,7 +161,6 @@ if not members_df.empty:
                 if is_carry_over:
                     st.warning(f"⚠️ **ยอดยกมา:** ระบบจะบันทึกว่าลูกค้าจ่ายเงินต้นมาแล้ว **{monthly_principal * months_paid:,.2f}** บาท และจ่ายดอกเบี้ยแล้ว **{monthly_interest * months_paid:,.2f}** บาท (รวม {months_paid} งวด)")
 
-            # ปุ่มกด (อยู่ข้างนอกฟอร์ม)
             new_loan_submitted = st.button("✅ อนุมัติสัญญาเงินกู้", use_container_width=True, type="primary")
 
             if new_loan_submitted:
@@ -175,7 +172,6 @@ if not members_df.empty:
                     with st.spinner("กำลังสร้างสัญญาเงินกู้..."):
                         data_entry_datetime = datetime.now(bangkok_tz)
                         data_entry_date_str = data_entry_datetime.strftime("%Y-%m-%d %H:%M:%S")
-
                         clean_loan_account = loan_account.split(" ")[0] + " " + loan_account.split(" ")[1]
 
                         if clean_loan_account == "บัญชี 3":
@@ -201,8 +197,10 @@ if not members_df.empty:
 
                         loan_id = f"L-{member_id}-{clean_loan_account.replace(' ', '')}-{int(data_entry_datetime.timestamp())}"
 
+                        # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ Loans ---
                         new_loan_data = [
-                            loan_id, member_id, clean_loan_account, issue_date_str, due_date_str,
+                            loan_id, member_id, selected_name, # <-- เพิ่ม selected_name 
+                            clean_loan_account, issue_date_str, due_date_str,
                             principal_amount_new, initial_principal_paid, initial_interest_paid, 
                             "ยังค้างชำระ", data_entry_date_str
                         ]
@@ -212,9 +210,11 @@ if not members_df.empty:
                             
                             if is_carry_over and (initial_principal_paid > 0 or initial_interest_paid > 0):
                                 trans_id = f"PAY-CARRY-{int(data_entry_datetime.timestamp())}"
+                                
+                                # --- เพิ่มคอลัมน์ Name เข้าไปใน PaymentHistoryกรณียอดยกมา ---
                                 carry_over_payment_data = [
-                                    trans_id, data_entry_date_str, member_id, loan_id,
-                                    initial_principal_paid, initial_interest_paid
+                                    trans_id, data_entry_date_str, member_id, selected_name, # <-- เพิ่ม selected_name
+                                    loan_id, initial_principal_paid, initial_interest_paid
                                 ]
                                 gsheet_utils.add_row_to_sheet("PaymentHistory", _sh, carry_over_payment_data)
 
