@@ -48,12 +48,21 @@ if st.button("🔍 เริ่มการตรวจสอบ"):
             else:
                 st.error(f"🚨 พบสัญญาเงินกู้ที่ครบกำหนดแต่ยังค้างชำระ {len(overdue_loans)} ฉบับ:")
                 
-                # 3. จัดการคอลัมน์ชื่อสมาชิก (ดึงจากคอลัมน์ Name ใหม่ หรือถ้าไม่มีให้เทียบจาก MemberID)
+                # 3. จัดการคอลัมน์ชื่อสมาชิก (ดึงจาก Members มาอุดรอยรั่วข้อมูลเก่า)
+                # สร้างดิกชันนารีจับคู่ รหัสสมาชิก -> ชื่อ จากแท็บ Members
+                name_dict = dict(zip(members_df['MemberID'], members_df['Name']))
+                
                 if 'Name' in overdue_loans.columns:
-                    overdue_loans['ชื่อสมาชิก'] = overdue_loans['Name'].replace("", "ไม่ระบุชื่อ")
+                    # แปลงช่องที่เป็น String ว่างๆ ให้กลายเป็น None เพื่อให้ Pandas รู้ว่าเป็นค่าว่าง
+                    overdue_loans['Name'] = overdue_loans['Name'].replace(r'^\s*$', None, regex=True)
+                    # ถ้าช่อง Name ว่าง ให้เอา MemberID ไปดึงชื่อมาจาก name_dict มาเติม
+                    overdue_loans['ชื่อสมาชิก'] = overdue_loans['Name'].fillna(overdue_loans['MemberID'].map(name_dict))
                 else:
-                    name_dict = dict(zip(members_df['MemberID'], members_df['Name']))
-                    overdue_loans['ชื่อสมาชิก'] = overdue_loans['MemberID'].map(name_dict).fillna("ไม่พบชื่อ")
+                    # กรณีลืมสร้างคอลัมน์ Name ในชีต Loans ก็ให้ดึงจาก Members ล้วนๆ
+                    overdue_loans['ชื่อสมาชิก'] = overdue_loans['MemberID'].map(name_dict)
+                
+                # ถ้าหาไม่เจอจริงๆ ค่อยใส่ "ไม่พบชื่อ"
+                overdue_loans['ชื่อสมาชิก'] = overdue_loans['ชื่อสมาชิก'].fillna("ไม่พบชื่อ")
 
                 # 4. คำนวณตัวเลข
                 overdue_loans['PrincipalAmount'] = pd.to_numeric(overdue_loans['PrincipalAmount'], errors='coerce').fillna(0)
@@ -63,7 +72,7 @@ if st.button("🔍 เริ่มการตรวจสอบ"):
                 # 5. จัดรูปแบบวันที่เป็น พ.ศ.
                 overdue_loans['วันครบกำหนด'] = overdue_loans['DueDate_Date'].apply(format_thai_date)
                 
-                # 6. เลือกคอลัมน์ที่จะแสดงผลแบบ Dynamic (ป้องกัน KeyError 100%)
+                # 6. เลือกคอลัมน์ที่จะแสดงผลแบบ Dynamic 
                 display_cols_mapping = {
                     'LoanID': 'รหัสสัญญา',
                     'ชื่อสมาชิก': 'ชื่อสมาชิก',
@@ -73,7 +82,6 @@ if st.button("🔍 เริ่มการตรวจสอบ"):
                     'วันครบกำหนด': 'ครบกำหนด'
                 }
                 
-                # ตรวจสอบว่ามีคอลัมน์ครบไหมก่อนสั่งแสดงผล
                 available_cols = [col for col in display_cols_mapping.keys() if col in overdue_loans.columns]
                 overdue_loans_to_show = overdue_loans[available_cols].rename(columns={k: display_cols_mapping[k] for k in available_cols})
                 
