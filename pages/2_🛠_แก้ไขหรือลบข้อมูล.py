@@ -143,7 +143,7 @@ if not members_df.empty:
                 is_carry_over = False
                 months_paid = 0
                 if loan_account == "บัญชี 3 (รายเดือน 4 ปี)":
-                    is_carry_over = st.checkbox("✅ เป็นสัญญายกยอดมา (ลูกค้าเคยผ่อนมาแล้วก่อนใช้แอป)")
+                    is_carry_over = st.checkbox("เป็นสัญญายกยอดมา (ลูกค้าเคยผ่อนมาแล้วก่อนใช้แอป)")
                     if is_carry_over:
                         months_paid = st.number_input("จำนวนงวดที่ชำระไปแล้ว (งวด)", min_value=1, max_value=47, step=1, value=1)
 
