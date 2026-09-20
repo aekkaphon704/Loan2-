@@ -172,6 +172,7 @@ if not members_df.empty:
                     with st.spinner("กำลังสร้างสัญญาเงินกู้..."):
                         data_entry_datetime = datetime.now(bangkok_tz)
                         data_entry_date_str = data_entry_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                        
                         clean_loan_account = loan_account.split(" ")[0] + " " + loan_account.split(" ")[1]
 
                         if clean_loan_account == "บัญชี 3":
@@ -195,11 +196,13 @@ if not members_df.empty:
                             initial_principal_paid = round(monthly_principal * months_paid, 2)
                             initial_interest_paid = round(monthly_interest * months_paid, 2)
 
-                        loan_id = f"L-{member_id}-{clean_loan_account.replace(' ', '')}-{int(data_entry_datetime.timestamp())}"
+                        # --- แก้ไขรูปแบบการสร้าง LoanID เอาเฉพาะตัวเลข ---
+                        account_number_only = loan_account.split(" ")[1] # ดึงมาแค่เลข 1, 2, 3, 4
+                        loan_id = f"L-{member_id}-{account_number_only}-{int(data_entry_datetime.timestamp())}"
 
-                        # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ Loans ---
+                        # ข้อมูลที่ลงชีตยังคงเป็น "บัญชี 1", "บัญชี 3" ตามเดิมให้ดูง่าย
                         new_loan_data = [
-                            loan_id, member_id, selected_name, # <-- เพิ่ม selected_name 
+                            loan_id, member_id, selected_name, 
                             clean_loan_account, issue_date_str, due_date_str,
                             principal_amount_new, initial_principal_paid, initial_interest_paid, 
                             "ยังค้างชำระ", data_entry_date_str
@@ -210,10 +213,8 @@ if not members_df.empty:
                             
                             if is_carry_over and (initial_principal_paid > 0 or initial_interest_paid > 0):
                                 trans_id = f"PAY-CARRY-{int(data_entry_datetime.timestamp())}"
-                                
-                                # --- เพิ่มคอลัมน์ Name เข้าไปใน PaymentHistoryกรณียอดยกมา ---
                                 carry_over_payment_data = [
-                                    trans_id, data_entry_date_str, member_id, selected_name, # <-- เพิ่ม selected_name
+                                    trans_id, data_entry_date_str, member_id, selected_name,
                                     loan_id, initial_principal_paid, initial_interest_paid
                                 ]
                                 gsheet_utils.add_row_to_sheet("PaymentHistory", _sh, carry_over_payment_data)
