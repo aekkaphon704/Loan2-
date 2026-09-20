@@ -33,6 +33,9 @@ def format_thai_date(dt):
         return f"{dt.day} {thai_months[dt.month - 1]} {dt.year + 543}"
     return str(dt)
 
+def safe_float(value):
+    return float(value) if value not in [None, ''] else 0.0
+
 @st.cache_data(ttl=60)
 def get_address_suggestions(_sh):
     df = gsheet_utils.get_data_as_dataframe("Members", _sh)
@@ -44,8 +47,48 @@ def get_address_suggestions(_sh):
         "provinces": sorted(df["Province"].dropna().unique().tolist())
     }
 
-def safe_float(value):
-    return float(value) if value not in [None, ''] else 0.0
+# ⭐ ฟังก์ชันจัดการใบเสร็จแบบ "ทบยอด" (สะสมรายการ)
+def update_receipt_session(_sh, member_id, payment_date, new_line_items):
+    latest_member_info = gsheet_utils.get_member_by_id(_sh, member_id)
+    receipt_balances = []
+    
+    # ดึงยอดคงเหลือเงินฝาก
+    savings = safe_float(latest_member_info.get('Savings'))
+    if savings > 0:
+        receipt_balances.append({'label': 'เงินฝากสัจจะคงเหลือ', 'amount': savings, 'unit': 'บาท'})
+        
+    # ดึงยอดคงเหลือหุ้น
+    shares = safe_float(latest_member_info.get('Shares'))
+    if shares > 0:
+        receipt_balances.append({'label': 'หุ้นสะสมคงเหลือ', 'amount': shares, 'unit': 'บาท'})
+        receipt_balances.append({'label': 'จำนวนหุ้นคงเหลือ', 'amount': int(shares/50), 'unit': 'หุ้น'})
+        
+    # ดึงยอดคงเหลือสัญญาเงินกู้ทั้งหมด
+    remaining_loans_df = gsheet_utils.get_active_loans_by_member(_sh, member_id)
+    if not remaining_loans_df.empty:
+        for l_id in remaining_loans_df['LoanID'].unique():
+            grp = remaining_loans_df[remaining_loans_df['LoanID'] == l_id]
+            p = safe_float(grp['PrincipalAmount'].sum())
+            a = safe_float(grp['AmountPaid'].sum())
+            r = p - a
+            if r > 0: 
+                loan_acc = str(grp.iloc[0]['LoanAccount'])
+                receipt_balances.append({'label': f'ยอดค้าง สัญญา {l_id} ({loan_acc})', 'amount': r, 'unit': 'บาท'})
+    else:
+        receipt_balances.append({'label': 'ยอดหนี้คงเหลือทั้งหมด', 'amount': 0, 'unit': 'บาท'})
+                
+    # ถ้ายังไม่มีบิลใน Session ให้สร้างใหม่ แต่ถ้ามีแล้วให้ "ต่อท้ายรายการเดิม"
+    if 'receipt_data' not in st.session_state:
+        st.session_state['receipt_data'] = {
+            "member_info": latest_member_info,
+            "payment_date": format_thai_date(payment_date),
+            "line_items": new_line_items,
+            "balance_summary": receipt_balances
+        }
+    else:
+        st.session_state['receipt_data']['line_items'].extend(new_line_items)
+        st.session_state['receipt_data']['balance_summary'] = receipt_balances # อัปเดตยอดคงเหลือล่าสุด
+        st.session_state['receipt_data']['payment_date'] = format_thai_date(payment_date)
 
 # --- 3. เชื่อมต่อและเตรียมข้อมูล ---
 _sh = gsheet_utils.connect_to_sheet()
@@ -89,21 +132,26 @@ if submitted:
     if not name or not village or not sub_district or not district or not province:
         st.warning("กรุณากรอกข้อมูลให้ครบถ้วน")
     else:
-        bangkok_tz = timezone("Asia/Bangkok")
-        timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
-        dob_str = dob.strftime("%Y-%m-%d") if dob else None
-
-        new_row_data = [
-            member_id, name, address_no, village, sub_district, district, province, dob_str,
-            savings, shares,
-            timestamp_str, ""
-        ]
-
-        if gsheet_utils.add_row_to_sheet("Members", _sh, new_row_data):
-            st.success(f"บันทึกข้อมูลคุณ '{name}' เรียบร้อย!")
-            get_address_suggestions.clear()
+        # ⭐ ป้องกันการใส่ชื่อซ้ำ
+        existing_members = gsheet_utils.get_data_as_dataframe("Members", _sh)
+        if not existing_members.empty and name in existing_members["Name"].values:
+            st.error(f"⚠️ มีชื่อ '{name}' ในระบบแล้ว! ไม่สามารถเพิ่มซ้ำได้ (หากชื่อ-นามสกุลซ้ำกันจริงๆ แนะนำให้ใส่วงเล็บต่อท้าย เช่น '{name} (2)')")
         else:
-            st.error("ไม่สามารถบันทึกข้อมูลได้")
+            bangkok_tz = timezone("Asia/Bangkok")
+            timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
+            dob_str = dob.strftime("%Y-%m-%d") if dob else None
+
+            new_row_data = [
+                member_id, name, address_no, village, sub_district, district, province, dob_str,
+                savings, shares,
+                timestamp_str, ""
+            ]
+
+            if gsheet_utils.add_row_to_sheet("Members", _sh, new_row_data):
+                st.success(f"บันทึกข้อมูลคุณ '{name}' เรียบร้อย!")
+                get_address_suggestions.clear()
+            else:
+                st.error("ไม่สามารถบันทึกข้อมูลได้")
 
 # --- 6. ส่วนของการแสดงข้อมูลทั้งหมด ---
 st.header("2. ข้อมูลสมาชิกทั้งหมด")
@@ -288,9 +336,8 @@ else:
                         timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
                         transaction_id = f"T-{int(datetime.now().timestamp())}"
                         
-                        # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ PaymentHistory ---
                         payment_row = [
-                            transaction_id, timestamp_str, member_id, selected_name, # <-- เพิ่ม selected_name
+                            transaction_id, timestamp_str, member_id, selected_name, 
                             selected_loan_id, principal_paid_input, interest_paid_input
                         ]
                         
@@ -305,34 +352,15 @@ else:
                              st.success(f"บันทึกการชำระเงินสำหรับสัญญา {selected_loan_id} เรียบร้อย!")
 
                         gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", {"LastUpdated": timestamp_str})
-                        latest_member_info = gsheet_utils.get_member_by_id(_sh, member_id)
                         
+                        # ⭐ โยนรายการเข้า "ตะกร้าใบเสร็จ"
                         receipt_line_items = []
                         if principal_paid_input > 0:
                             receipt_line_items.append({'label': f"เงินต้น บัญชี {loan_account_display}", 'amount': principal_paid_input})
                         if interest_paid_input > 0:
                             receipt_line_items.append({'label': f"ดอกเบี้ย บัญชี {loan_account_display}", 'amount': interest_paid_input})
                         
-                        receipt_balances = []
-                        remaining_loans_df = gsheet_utils.get_active_loans_by_member(_sh, member_id)
-                        if remaining_loans_df.empty:
-                             receipt_balances.append({'label': 'ยอดหนี้คงเหลือทั้งหมด', 'amount': 0, 'unit': 'บาท'})
-                        else:
-                            for l_id in remaining_loans_df['LoanID'].unique():
-                                grp = remaining_loans_df[remaining_loans_df['LoanID'] == l_id]
-                                p = safe_float(grp['PrincipalAmount'].sum())
-                                a = safe_float(grp['AmountPaid'].sum())
-                                r = p - a
-                                if r > 0: 
-                                   receipt_balances.append({'label': f'ยอดค้าง สัญญา {l_id}', 'amount': r, 'unit': 'บาท'})
-                        
-                        st.session_state['receipt_data'] = {
-                            "member_info": latest_member_info,
-                            "payment_date": format_thai_date(payment_date),
-                            "line_items": receipt_line_items,
-                            "balance_summary": receipt_balances,
-                            "loan_id": selected_loan_id
-                        }
+                        update_receipt_session(_sh, member_id, payment_date, receipt_line_items)
                         st.rerun()
 
         elif transaction_type == "ซื้อหุ้นประจำปี":
@@ -375,21 +403,13 @@ else:
                             gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
                             transaction_id = f"S-{int(datetime.now().timestamp())}"
                             
-                            # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ ShareHistory ---
                             history_row = [transaction_id, timestamp_str, member_id, selected_name, 2, 100, "Purchase"]
                             gsheet_utils.add_row_to_sheet("ShareHistory", _sh, history_row)
 
                             st.success("บันทึกการซื้อหุ้นเรียบร้อย!")
-                            latest_member_info = gsheet_utils.get_member_by_id(_sh, member_id)
-                            st.session_state['receipt_data'] = {
-                                "member_info": latest_member_info,
-                                "payment_date": format_thai_date(date.today()),
-                                "line_items": [{'label': "ซื้อหุ้นประจำปี (2 หุ้น)", 'amount': 100.00}],
-                                "balance_summary": [
-                                    {'label': 'หุ้นสะสมคงเหลือ', 'amount': latest_member_info.get('Shares', 0), 'unit': 'บาท'},
-                                    {'label': 'จำนวนหุ้นคงเหลือ', 'amount': int(safe_float(latest_member_info.get('Shares')) / 50), 'unit': 'หุ้น'}
-                                ]
-                            }
+                            
+                            # ⭐ โยนรายการเข้า "ตะกร้าใบเสร็จ"
+                            update_receipt_session(_sh, member_id, date.today(), [{'label': "ซื้อหุ้นประจำปี (2 หุ้น)", 'amount': 100.00}])
                             st.rerun()
 
                     if no_buy_button:
@@ -400,7 +420,6 @@ else:
                             gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
                             transaction_id = f"S-{int(datetime.now().timestamp())}"
                             
-                            # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ ShareHistory ---
                             history_row = [transaction_id, timestamp_str, member_id, selected_name, 0, 0, "Declined"]
                             gsheet_utils.add_row_to_sheet("ShareHistory", _sh, history_row)
                             st.info(f"รับทราบการตัดสินใจ 'ไม่ซื้อหุ้น' ของคุณในปีนี้เรียบร้อยแล้ว (ปุ่มจะกลับมาอีกครั้งในปี พ.ศ. {today.year + 1 + 543})")
@@ -426,37 +445,32 @@ else:
                     gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
                     transaction_id = f"D-{int(datetime.now().timestamp())}"
                     
-                    # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ SavingsHistory ---
                     history_row = [transaction_id, timestamp_str, member_id, selected_name, deposit_amount]
                     gsheet_utils.add_row_to_sheet("SavingsHistory", _sh, history_row)
 
                     st.success(f"บันทึกเงินฝาก {deposit_amount:,.2f} บาท เรียบร้อย! ยอดคงเหลือใหม่: {new_savings_balance:,.2f} บาท")
-                    latest_member_info = gsheet_utils.get_member_by_id(_sh, member_id)
-                    st.session_state['receipt_data'] = {
-                        "member_info": latest_member_info,
-                        "payment_date": format_thai_date(deposit_date),
-                        "line_items": [{'label': "ฝากเงินออมสัจจะ", 'amount': deposit_amount}],
-                        "balance_summary": [{'label': 'เงินฝากสัจจะคงเหลือ', 'amount': latest_member_info.get('Savings', 0), 'unit': 'บาท'}]
-                    }
+                    
+                    # ⭐ โยนรายการเข้า "ตะกร้าใบเสร็จ"
+                    update_receipt_session(_sh, member_id, deposit_date, [{'label': "ฝากเงินออมสัจจะ", 'amount': deposit_amount}])
                     st.rerun()
 
 # --- 8. ส่วนแสดงปุ่มดาวน์โหลดใบเสร็จ และ ปุ่มเริ่มใหม่ ---
 if 'receipt_data' in st.session_state and st.session_state['receipt_data']:
     receipt_info = st.session_state['receipt_data']
-    st.info(f"ข้อมูลสำหรับสร้างใบเสร็จของ '{receipt_info['member_info']['Name']}' พร้อมแล้ว")
+    st.info(f"💡 มีข้อมูลทำธุรกรรมของ '{receipt_info['member_info']['Name']}' จำนวน {len(receipt_info['line_items'])} รายการ พร้อมสำหรับสร้างใบเสร็จรวมแล้ว")
     pdf_bytes = pdf_utils.generate_receipt_pdf(receipt_info)
     today_for_filename = date.today()
     be_filename_date = f"{today_for_filename.year + 543}{today_for_filename.strftime('%m%d')}"
 
     st.download_button(
-        label="📄 ดาวน์โหลดใบเสร็จ (PDF)",
+        label=f"📄 ดาวน์โหลดใบเสร็จรวม {len(receipt_info['line_items'])} รายการ (PDF)",
         data=bytes(pdf_bytes),
         file_name=f"Receipt_{receipt_info['member_info']['Name']}_{be_filename_date}.pdf",
         mime="application/pdf"
     )
 
 if selected_name:
-    if st.button("เริ่มธุรกรรมใหม่ / ล้างข้อมูลใบเสร็จ"):
+    if st.button("เริ่มธุรกรรมใหม่ / ล้างตะกร้าใบเสร็จ"):
         if 'receipt_data' in st.session_state:
             del st.session_state['receipt_data']
         gsheet_utils.clear_all_caches()
