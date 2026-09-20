@@ -20,7 +20,6 @@ THAI_HEADERS = {
 # --- 2. การตั้งค่าและฟังก์ชัน Helper ---
 st.set_page_config(page_title="ระบบจัดการสมาชิก", page_icon="🗂️", layout="wide")
 
-# ฟังก์ชันแปลงวันที่เป็นภาษาไทย + ปี พ.ศ. (ค.ศ. + 543)
 def format_thai_date(dt):
     if dt is None or dt == "": return "ไม่ได้ระบุ"
     if isinstance(dt, str):
@@ -119,7 +118,6 @@ if members_df.empty:
 else:
     display_df = members_df.copy()
     
-    # แปลงคอลัมน์วันที่เป็น พ.ศ. ในตารางแสดงผล
     if "DOB" in display_df.columns:
         display_df["DOB"] = display_df["DOB"].apply(format_thai_date)
     if "LastSharePurchaseDate" in display_df.columns:
@@ -157,12 +155,18 @@ if members_df_for_payment.empty:
     st.info("กรุณาเพิ่มข้อมูลสมาชิกก่อน")
 else:
     member_names = members_df_for_payment["Name"].tolist()
+    
+    def clear_receipt_on_change():
+        if 'receipt_data' in st.session_state:
+            del st.session_state['receipt_data']
+
     selected_name = st.selectbox(
         "เลือกสมาชิก:",
         options=member_names,
         index=None,
         placeholder="กรุณาเลือกชื่อ...",
-        key="transaction_member_name"
+        key="transaction_member_name",
+        on_change=clear_receipt_on_change # เคลียร์ใบเสร็จเดิมทันทีเมื่อเปลี่ยนชื่อ
     )
 
     if selected_name:
@@ -283,8 +287,11 @@ else:
 
                         timestamp_str = datetime.now(bangkok_tz).strftime("%Y-%m-%d %H:%M:%S")
                         transaction_id = f"T-{int(datetime.now().timestamp())}"
+                        
+                        # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ PaymentHistory ---
                         payment_row = [
-                            transaction_id, timestamp_str, member_id, selected_loan_id, principal_paid_input, interest_paid_input
+                            transaction_id, timestamp_str, member_id, selected_name, # <-- เพิ่ม selected_name
+                            selected_loan_id, principal_paid_input, interest_paid_input
                         ]
                         
                         gsheet_utils.add_row_to_sheet("PaymentHistory", _sh, payment_row)
@@ -367,7 +374,9 @@ else:
                             updates = {"Shares": new_share_balance, "LastSharePurchaseDate": today_str, "LastUpdated": timestamp_str}
                             gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
                             transaction_id = f"S-{int(datetime.now().timestamp())}"
-                            history_row = [transaction_id, timestamp_str, member_id, 2, 100, "Purchase"]
+                            
+                            # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ ShareHistory ---
+                            history_row = [transaction_id, timestamp_str, member_id, selected_name, 2, 100, "Purchase"]
                             gsheet_utils.add_row_to_sheet("ShareHistory", _sh, history_row)
 
                             st.success("บันทึกการซื้อหุ้นเรียบร้อย!")
@@ -390,7 +399,9 @@ else:
                             updates = {"LastSharePurchaseDate": today_str, "LastUpdated": timestamp_str}
                             gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
                             transaction_id = f"S-{int(datetime.now().timestamp())}"
-                            history_row = [transaction_id, timestamp_str, member_id, 0, 0, "Declined"]
+                            
+                            # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ ShareHistory ---
+                            history_row = [transaction_id, timestamp_str, member_id, selected_name, 0, 0, "Declined"]
                             gsheet_utils.add_row_to_sheet("ShareHistory", _sh, history_row)
                             st.info(f"รับทราบการตัดสินใจ 'ไม่ซื้อหุ้น' ของคุณในปีนี้เรียบร้อยแล้ว (ปุ่มจะกลับมาอีกครั้งในปี พ.ศ. {today.year + 1 + 543})")
                             st.rerun()
@@ -414,7 +425,9 @@ else:
                     updates = {"Savings": new_savings_balance, "LastUpdated": timestamp_str}
                     gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", updates)
                     transaction_id = f"D-{int(datetime.now().timestamp())}"
-                    history_row = [transaction_id, timestamp_str, member_id, deposit_amount]
+                    
+                    # --- เพิ่มคอลัมน์ Name เข้าไปในประวัติ SavingsHistory ---
+                    history_row = [transaction_id, timestamp_str, member_id, selected_name, deposit_amount]
                     gsheet_utils.add_row_to_sheet("SavingsHistory", _sh, history_row)
 
                     st.success(f"บันทึกเงินฝาก {deposit_amount:,.2f} บาท เรียบร้อย! ยอดคงเหลือใหม่: {new_savings_balance:,.2f} บาท")
