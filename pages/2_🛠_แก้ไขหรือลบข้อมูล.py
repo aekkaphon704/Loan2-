@@ -44,7 +44,6 @@ if not members_df.empty:
         placeholder="กรุณาเลือกชื่อ..."
     )
 
-    # --- 2. Display Forms and Logic when member is selected ---
     if selected_name:
         member_id = member_options[selected_name]
 
@@ -73,7 +72,7 @@ if not members_df.empty:
                 with col_form_2:
                     district = st.text_input("อำเภอ", value=member_data.get('District'))
                     province = st.text_input("จังหวัด", value=member_data.get('Province'))
-                    dob = st.date_input("วันเกิด (ค.ศ.)", value=dob_obj, format="DD/MM/YYYY")
+                    dob = st.date_input("วันเกิด (เลือกปี ค.ศ.)", value=dob_obj, format="DD/MM/YYYY")
                     shares = st.number_input("เงินหุ้น (บาท, ยอดปัจจุบัน)", value=gsheet_utils.safe_float(member_data.get('Shares')))
 
                 st.markdown("---")
@@ -83,7 +82,6 @@ if not members_df.empty:
                 with col_btn_2:
                     delete_button = st.form_submit_button("🗑️ ลบสมาชิกคนนี้", type="secondary", use_container_width=True)
 
-            # --- Logic after edit/delete form submission ---
             if save_button:
                 st.session_state.confirm_delete_id = None
                 st.session_state.confirm_delete_name = None
@@ -105,11 +103,9 @@ if not members_df.empty:
                 st.session_state.confirm_delete_name = selected_name
                 st.rerun()
 
-            # --- Delete Confirmation Block ---
             if st.session_state.confirm_delete_id == member_id:
                 st.warning(f"**คุณกำลังจะลบข้อมูลของ {st.session_state.confirm_delete_name}**")
                 st.markdown("การดำเนินการนี้ไม่สามารถย้อนกลับได้ คุณแน่ใจหรือไม่?")
-                
                 confirm_col1, confirm_col2 = st.columns(2)
                 with confirm_col1:
                     if st.button("🔴 ใช่, ฉันยืนยันการลบ", use_container_width=True, type="primary"):
@@ -126,49 +122,49 @@ if not members_df.empty:
                         st.session_state.confirm_delete_name = None
                         st.rerun()
 
+            # --- 2B. New Loan Contract Form (เปลี่ยนจาก st.form เป็นปุ่มธรรมดา เพื่อให้ Interactive) ---
             st.markdown("---")
-
-            # --- 2B. New Loan Contract Form ---
             st.subheader("💰 อนุมัติสัญญาเงินกู้ใหม่ (และยอดยกมา)")
             st.info("ระบุ 'วันที่เริ่มกู้' ระบบจะคำนวณวันหมดอายุสัญญาให้โดยอัตโนมัติ")
 
-            with st.form("new_loan_form", clear_on_submit=True):
-                col_loan_1, col_loan_2 = st.columns(2)
-                with col_loan_1:
-                    loan_account = st.selectbox(
-                        "เลือกบัญชีเงินกู้:", 
-                        options=["บัญชี 1 (ตัดรอบ 5 พ.ย.)", "บัญชี 2 (ตัดรอบ 5 พ.ย.)", "บัญชี 3 (รายเดือน 4 ปี)", "บัญชี 4 (ตัดรอบ 5 ก.ค.)"], 
-                        index=None, placeholder="--- เลือกบัญชี ---"
-                    )
-                    principal_amount_new = st.number_input("ยอดเงินต้นที่อนุมัติ (บาท):", min_value=0.0, step=1000.0)
+            col_loan_1, col_loan_2 = st.columns(2)
+            with col_loan_1:
+                loan_account = st.selectbox(
+                    "เลือกบัญชีเงินกู้:", 
+                    options=["บัญชี 1 (ตัดรอบ 5 พ.ย.)", "บัญชี 2 (ตัดรอบ 5 พ.ย.)", "บัญชี 3 (รายเดือน 4 ปี)", "บัญชี 4 (ตัดรอบ 5 ก.ค.)"], 
+                    index=None, placeholder="--- เลือกบัญชี ---"
+                )
+                principal_amount_new = st.number_input("ยอดเงินต้นที่อนุมัติ (บาท):", min_value=0.0, step=1000.0)
+            
+            with col_loan_2:
+                issue_date = st.date_input("วันที่ทำสัญญา / วันที่เริ่มกู้ (ปฏิทิน ค.ศ.)", value=date.today())
+                st.caption(f"ตรงกับ พ.ศ.: **{format_thai_date(issue_date)}**") # แสดง พ.ศ. ให้แอดมินดูทันที
                 
-                with col_loan_2:
-                    issue_date = st.date_input("วันที่ทำสัญญา / วันที่เริ่มกู้ (ค.ศ.)", value=date.today())
-                    
-                    # ส่วนรับข้อมูล "ยอดยกมา" (สำหรับบัญชี 3)
-                    is_carry_over = False
-                    months_paid = 0
-                    if loan_account == "บัญชี 3 (รายเดือน 4 ปี)":
-                        is_carry_over = st.checkbox("✅ เป็นสัญญายกยอดมา (ลูกค้าผ่อนมาก่อนหน้านี้แล้ว)")
-                        if is_carry_over:
-                            months_paid = st.number_input("จำนวนงวดที่ชำระไปแล้ว (งวด)", min_value=1, max_value=47, step=1, value=1)
-
-                # --- พรีวิวค่างวดสำหรับบัญชี 3 ---
-                monthly_principal, monthly_interest = 0.0, 0.0
-                if loan_account == "บัญชี 3 (รายเดือน 4 ปี)" and principal_amount_new > 0:
-                    total_interest = principal_amount_new * 0.13 * 4
-                    monthly_total = (principal_amount_new + total_interest) / 48
-                    monthly_principal = principal_amount_new / 48
-                    monthly_interest = total_interest / 48
-                    
-                    st.info(f"💡 **พรีวิวบัญชี 3 (สัญญารายเดือน 48 งวด):**\n"
-                            f"- ยอดส่งรวม: **{monthly_total:,.2f}** บาท/เดือน\n"
-                            f"- (หักเป็นเงินต้น: **{monthly_principal:,.2f}** บาท | ดอกเบี้ย: **{monthly_interest:,.2f}** บาท)")
-                    
+                # ส่วนรับข้อมูล "ยอดยกมา" (เด้งขึ้นมาทันทีเมื่อเลือกบัญชี 3)
+                is_carry_over = False
+                months_paid = 0
+                if loan_account == "บัญชี 3 (รายเดือน 4 ปี)":
+                    is_carry_over = st.checkbox("✅ เป็นสัญญายกยอดมา (ลูกค้าเคยผ่อนมาแล้วก่อนใช้แอป)")
                     if is_carry_over:
-                        st.warning(f"⚠️ **ยอดยกมา:** ระบบจะบันทึกว่าลูกค้าจ่ายเงินต้นมาแล้ว **{monthly_principal * months_paid:,.2f}** บาท และจ่ายดอกเบี้ยแล้ว **{monthly_interest * months_paid:,.2f}** บาท (รวม {months_paid} งวด)")
+                        months_paid = st.number_input("จำนวนงวดที่ชำระไปแล้ว (งวด)", min_value=1, max_value=47, step=1, value=1)
 
-                new_loan_submitted = st.form_submit_button("อนุมัติสัญญาเงินกู้")
+            # --- พรีวิวค่างวดสำหรับบัญชี 3 ---
+            monthly_principal, monthly_interest = 0.0, 0.0
+            if loan_account == "บัญชี 3 (รายเดือน 4 ปี)" and principal_amount_new > 0:
+                total_interest = principal_amount_new * 0.13 * 4
+                monthly_total = (principal_amount_new + total_interest) / 48
+                monthly_principal = principal_amount_new / 48
+                monthly_interest = total_interest / 48
+                
+                st.info(f"💡 **พรีวิวบัญชี 3 (สัญญารายเดือน 48 งวด):**\n"
+                        f"- ยอดส่งรวม: **{monthly_total:,.2f}** บาท/เดือน\n"
+                        f"- (หักเป็นเงินต้น: **{monthly_principal:,.2f}** บาท | ดอกเบี้ย: **{monthly_interest:,.2f}** บาท)")
+                
+                if is_carry_over:
+                    st.warning(f"⚠️ **ยอดยกมา:** ระบบจะบันทึกว่าลูกค้าจ่ายเงินต้นมาแล้ว **{monthly_principal * months_paid:,.2f}** บาท และจ่ายดอกเบี้ยแล้ว **{monthly_interest * months_paid:,.2f}** บาท (รวม {months_paid} งวด)")
+
+            # ปุ่มกด (อยู่ข้างนอกฟอร์ม)
+            new_loan_submitted = st.button("✅ อนุมัติสัญญาเงินกู้", use_container_width=True, type="primary")
 
             if new_loan_submitted:
                 if not loan_account:
@@ -177,47 +173,34 @@ if not members_df.empty:
                     st.warning("กรุณาระบุยอดเงินต้นให้ถูกต้อง")
                 else:
                     with st.spinner("กำลังสร้างสัญญาเงินกู้..."):
-                        
                         data_entry_datetime = datetime.now(bangkok_tz)
                         data_entry_date_str = data_entry_datetime.strftime("%Y-%m-%d %H:%M:%S")
 
-                        # ตัดชื่อวงเล็บออก (เช่น "บัญชี 3 (รายเดือน 4 ปี)" -> "บัญชี 3")
                         clean_loan_account = loan_account.split(" ")[0] + " " + loan_account.split(" ")[1]
 
-                        # --- คำนวณวันหมดอายุสัญญา (DueDate) ---
                         if clean_loan_account == "บัญชี 3":
-                            try:
-                                due_date = issue_date.replace(year=issue_date.year + 4)
-                            except ValueError: # กรณี 29 ก.พ.
-                                due_date = issue_date.replace(year=issue_date.year + 4, day=28)
+                            try: due_date = issue_date.replace(year=issue_date.year + 4)
+                            except ValueError: due_date = issue_date.replace(year=issue_date.year + 4, day=28)
                         elif clean_loan_account in ["บัญชี 1", "บัญชี 2"]:
-                            # ถ้ายื่นกู้หลังวันที่ 5 พ.ย. ให้ตัดรอบปีถัดไป
                             if issue_date.month > 11 or (issue_date.month == 11 and issue_date.day > 5):
                                 due_date = date(issue_date.year + 1, 11, 5)
-                            else:
-                                due_date = date(issue_date.year, 11, 5)
+                            else: due_date = date(issue_date.year, 11, 5)
                         elif clean_loan_account == "บัญชี 4":
-                            # ถ้ายื่นกู้หลังวันที่ 5 ก.ค. ให้ตัดรอบปีถัดไป
                             if issue_date.month > 7 or (issue_date.month == 7 and issue_date.day > 5):
                                 due_date = date(issue_date.year + 1, 7, 5)
-                            else:
-                                due_date = date(issue_date.year, 7, 5)
+                            else: due_date = date(issue_date.year, 7, 5)
                         
                         issue_date_str = issue_date.strftime("%Y-%m-%d")
                         due_date_str = due_date.strftime("%Y-%m-%d")
                         
-                        # --- คำนวณยอดยกมา (ถ้ามี) ---
                         initial_principal_paid = 0.0
                         initial_interest_paid = 0.0
-                        
                         if clean_loan_account == "บัญชี 3" and is_carry_over:
                             initial_principal_paid = round(monthly_principal * months_paid, 2)
                             initial_interest_paid = round(monthly_interest * months_paid, 2)
 
-                        # สร้าง ID ไม่ซ้ำ
                         loan_id = f"L-{member_id}-{clean_loan_account.replace(' ', '')}-{int(data_entry_datetime.timestamp())}"
 
-                        # LoanID, MemberID, LoanAccount, IssueDate, DueDate, PrincipalAmount, AmountPaid, InterestPaid, Status, DataEntryDate
                         new_loan_data = [
                             loan_id, member_id, clean_loan_account, issue_date_str, due_date_str,
                             principal_amount_new, initial_principal_paid, initial_interest_paid, 
@@ -227,7 +210,6 @@ if not members_df.empty:
                         if gsheet_utils.add_loan_contract(_sh, new_loan_data):
                             gsheet_utils.update_member_data("Members", _sh, member_id, "MemberID", {"LastUpdated": data_entry_date_str})
                             
-                            # หากเป็นยอดยกมา ให้บันทึกประวัติการจ่ายเงินลงใน PaymentHistory ด้วย 1 บรรทัด
                             if is_carry_over and (initial_principal_paid > 0 or initial_interest_paid > 0):
                                 trans_id = f"PAY-CARRY-{int(data_entry_datetime.timestamp())}"
                                 carry_over_payment_data = [
@@ -240,7 +222,6 @@ if not members_df.empty:
                             st.info(f"📅 รอบสัญญา: **{format_thai_date(issue_date)}** ถึง **{format_thai_date(due_date)}**")
                             if is_carry_over:
                                 st.info(f"📌 บันทึกประวัติ 'ยอดยกมา' จำนวน {months_paid} งวด เรียบร้อยแล้ว")
-                            
                             time.sleep(2)
                             st.rerun()
                         else:
