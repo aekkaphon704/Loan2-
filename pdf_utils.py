@@ -7,7 +7,6 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 # --- ตั้งค่าฟอนต์ภาษาไทย ---
 try:
-    # ชี้ที่อยู่ไฟล์ไปที่โฟลเดอร์ fonts/ ตามโครงสร้างของโปรเจกต์
     pdfmetrics.registerFont(TTFont('Sarabun', 'fonts/Sarabun-Regular.ttf'))
     try:
         pdfmetrics.registerFont(TTFont('Sarabun-Bold', 'fonts/Sarabun-Bold.ttf'))
@@ -31,46 +30,61 @@ def generate_receipt_pdf(receipt_data):
     balance_summary = receipt_data.get('balance_summary', [])
 
     # --- 1. หัวกระดาษ (ตรงกลาง) ---
-    c.setFont(FONT_BOLD, 24)
-    c.drawCentredString(width / 2.0, 750, "ใบเสร็จรับเงิน")
+    y_pos = 730  # ขยับลงมาจากขอบบนนิดหน่อย
+    c.setFont(FONT_BOLD, 26)
+    c.drawCentredString(width / 2.0, y_pos, "ใบเสร็จรับเงิน")
 
-    # --- 2. ข้อมูลลูกหนี้ และ วันที่ชำระ (ชิดซ้าย) ---
-    c.setFont(FONT_NAME, 16)
-    c.drawString(70, 680, f"ชื่อลูกหนี้: {member_name}")
-    c.drawString(70, 650, f"วันที่ชำระ: {pay_date}")
+    # --- 2. ข้อมูลลูกหนี้ และ วันที่ชำระ ---
+    y_pos -= 60
+    c.setFont(FONT_NAME, 18)
+    c.drawString(70, y_pos, f"ชื่อลูกหนี้: {member_name}")
+    y_pos -= 30
+    c.drawString(70, y_pos, f"วันที่ชำระ: {pay_date}")
 
     # --- 3. รายการที่ชำระ ---
-    c.drawString(70, 610, "รายการที่ชำระ:")
+    y_pos -= 45
+    c.setFont(FONT_NAME, 18)
+    c.drawString(70, y_pos, "รายการที่ชำระ:")
     
-    y_pos = 580
-    c.setFont(FONT_NAME, 15) 
+    y_pos -= 35
+    c.setFont(FONT_NAME, 17) # ปรับขนาดฟอนต์ให้สระไม่เบียดกันเกินไป
     for item in line_items:
-        c.drawString(100, y_pos, item['label'])
-        c.drawRightString(530, y_pos, f"{item['amount']:,.2f} บาท") 
-        y_pos -= 25
+        # ตัดคำว่า "บัญชี บัญชี" ที่ซ้ำซ้อนออก
+        clean_label = item['label'].replace("บัญชี บัญชี", "บัญชี")
+        c.drawString(100, y_pos, clean_label)
+        c.drawRightString(520, y_pos, f"{item['amount']:,.2f} บาท")
+        y_pos -= 30
 
+    # เส้นประคั่นรายการ
     y_pos -= 10
-    c.drawString(70, y_pos, "-")
+    c.drawString(70, y_pos, "-------------------------------------------------------------------------------------------------------------")
     y_pos -= 35
 
     # --- 4. สรุปยอดคงเหลือ ---
     for bal in balance_summary:
         unit = bal.get('unit', 'บาท')
         c.drawString(70, y_pos, bal['label'] + ":")
-        c.drawRightString(530, y_pos, f"{bal['amount']:,.2f} {unit}")
-        y_pos -= 25
+        c.drawRightString(520, y_pos, f"{bal['amount']:,.2f} {unit}")
+        y_pos -= 30
 
+    # เส้นประคั่นรายการด้านล่าง
     y_pos -= 10
-    c.drawString(70, y_pos, "-")
+    c.drawString(70, y_pos, "-------------------------------------------------------------------------------------------------------------")
 
-    # --- 5. ลายเซ็นต์ (ด้านล่างสุด) ---
-    sig_y = 200
-    c.setFont(FONT_NAME, 16)
+    # --- 5. ลายเซ็นต์ (Dynamic: ขยับตามข้อมูล) ---
+    # ให้เว้นระยะจากบรรทัดสุดท้ายลงมา 120 พิกเซล (ไม่ตกลงไปก้นกระดาษ)
+    sig_y = y_pos - 120 
+    
+    # ดักไว้ไม่ให้ลายเซ็นตกขอบกระดาษถ้ารายการยาวมาก
+    if sig_y < 100: 
+        sig_y = 100
+
+    c.setFont(FONT_NAME, 17)
     c.drawString(90, sig_y + 25, "_________________________")
     c.drawString(120, sig_y, "(       ผู้ชำระเงิน       )")
 
-    c.drawString(350, sig_y + 25, "_________________________")
-    c.drawString(380, sig_y, "(        ผู้รับเงิน        )")
+    c.drawString(330, sig_y + 25, "_________________________")
+    c.drawString(360, sig_y, "(        ผู้รับเงิน        )")
 
     c.showPage()
     c.save()
