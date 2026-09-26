@@ -11,24 +11,17 @@ from reportlab.lib.units import cm
 # ========== ตั้งค่าฟอนต์และสไตล์ ==========
 def setup_pdf_styles():
     thai_font = 'THSarabunNew'
-    thai_font_bold = 'THSarabunNewBold'
+    thai_font_bold = 'THSarabunNew-Bold'
     
     try:
-        # พยายามโหลดฟอนต์ราชการ THSarabunNew ก่อน
-        if 'THSarabunNew' not in pdfmetrics.getRegisteredFontNames():
-            pdfmetrics.registerFont(TTFont('THSarabunNew', 'fonts/THSarabunNew.ttf'))
-        if 'THSarabunNewBold' not in pdfmetrics.getRegisteredFontNames():
-            pdfmetrics.registerFont(TTFont('THSarabunNewBold', 'fonts/THSarabunNew Bold.ttf'))
-    except:
-        # ถ้าไม่มี ให้ดึง Sarabun ตัวเดิมที่พี่มีในโฟลเดอร์มาใช้
-        try:
-            thai_font = 'Sarabun'
-            thai_font_bold = 'Sarabun-Bold'
-            pdfmetrics.registerFont(TTFont('Sarabun', 'fonts/Sarabun-Regular.ttf'))
-            pdfmetrics.registerFont(TTFont('Sarabun-Bold', 'fonts/Sarabun-Bold.ttf'))
-        except:
-            thai_font = 'Helvetica'
-            thai_font_bold = 'Helvetica-Bold'
+        # บังคับใช้ THSarabunNew ล้วนๆ
+        pdfmetrics.registerFont(TTFont('THSarabunNew', 'fonts/THSarabunNew.ttf'))
+        pdfmetrics.registerFont(TTFont('THSarabunNew-Bold', 'fonts/THSarabunNew Bold.ttf'))
+    except Exception as e:
+        print(f"Font Load Error: {e}")
+        # ถ้าหาไฟล์ไม่เจอจริงๆ ถึงจะยอมเด้งไปฟอนต์ระบบ (Helvetica)
+        thai_font = 'Helvetica'
+        thai_font_bold = 'Helvetica-Bold'
         
     styles = getSampleStyleSheet()
     style_definitions = [
@@ -70,7 +63,7 @@ def generate_receipt_pdf(receipt_data):
     pdf_styles, font_normal, font_bold = setup_pdf_styles()
 
     buffer = io.BytesIO()
-    # ตั้งค่าหน้ากระดาษ A4 เว้นขอบกว้างๆ ให้ดูโล่งตาเหมือนในรูปต้นฉบับ
+    # ตั้งค่าหน้ากระดาษ A4 เว้นขอบกว้างๆ
     doc = SimpleDocTemplate(buffer, pagesize=A4, 
                             leftMargin=2.5*cm, rightMargin=2.5*cm, 
                             topMargin=3.0*cm, bottomMargin=2.5*cm)
@@ -110,7 +103,7 @@ def generate_receipt_pdf(receipt_data):
     ]))
     elements.append(table_info)
     
-    # เส้นคั่นที่ 1 (ขีดสั้นๆ เหมือนต้นฉบับ)
+    # เส้นคั่นที่ 1 (ขีดสั้นๆ)
     elements.append(Spacer(1, 1.5*cm)) 
     elements.append(Paragraph("-", pdf_styles['NormalLeft']))
     elements.append(Spacer(1, 1.0*cm)) 
