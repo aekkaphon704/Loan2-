@@ -10,16 +10,15 @@ from reportlab.lib.units import cm
 
 # ========== ตั้งค่าฟอนต์และสไตล์ ==========
 def setup_pdf_styles():
-    thai_font = 'THSarabunNew'
-    thai_font_bold = 'THSarabunNew-Bold'
+    thai_font = 'Sarabun'
+    thai_font_bold = 'Sarabun-Bold'
     
     try:
-        # บังคับใช้ THSarabunNew ล้วนๆ
-        pdfmetrics.registerFont(TTFont('THSarabunNew', 'fonts/THSarabunNew.ttf'))
-        pdfmetrics.registerFont(TTFont('THSarabunNew-Bold', 'fonts/THSarabunNew Bold.ttf'))
+        # ชี้เป้าไปที่ไฟล์ฟอนต์ที่พี่มีอยู่ในโฟลเดอร์ fonts แน่นอน
+        pdfmetrics.registerFont(TTFont('Sarabun', 'fonts/Sarabun-Regular.ttf'))
+        pdfmetrics.registerFont(TTFont('Sarabun-Bold', 'fonts/Sarabun-Bold.ttf'))
     except Exception as e:
         print(f"Font Load Error: {e}")
-        # ถ้าหาไฟล์ไม่เจอจริงๆ ถึงจะยอมเด้งไปฟอนต์ระบบ (Helvetica)
         thai_font = 'Helvetica'
         thai_font_bold = 'Helvetica-Bold'
         
