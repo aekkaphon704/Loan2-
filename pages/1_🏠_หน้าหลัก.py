@@ -248,14 +248,17 @@ else:
                             remaining_total = total_debt - total_paid_so_far
                             
                             st.info(f"💡 **รายละเอียดบัญชี 3 (รายเดือน 48 งวด)**\n"
-                                    f"- ยอดส่งค่างวด: **{monthly_installment:,.2f}** บาท/เดือน\n"
+                                    f"- ยอดส่งค่างวดเต็ม: **{monthly_installment:,.2f}** บาท/เดือน\n"
                                     f"- ยอดหนี้คงเหลือรวมทั้งหมด: **{remaining_total:,.2f}** บาท")
                             
-                            pay_amount = st.number_input("จำนวนเงินรวมที่ต้องการชำระ (บาท)", 
-                                                         min_value=0.0, 
-                                                         max_value=float(remaining_total), 
-                                                         step=float(monthly_installment), 
-                                                         value=float(monthly_installment) if remaining_total >= monthly_installment else float(remaining_total))
+                            # 💡 จุดที่แก้ไข: ให้แก้ไขตัวเลขช่องนี้ได้ เผื่อลูกหนี้จ่ายไม่เต็มงวด หรือจ่ายเกิน
+                            pay_amount = st.number_input(
+                                "จำนวนเงินรวมที่ต้องการชำระ (สามารถแก้ไขตัวเลขได้)", 
+                                min_value=0.0, 
+                                max_value=float(remaining_total), 
+                                step=100.0, 
+                                value=float(monthly_installment) if remaining_total >= monthly_installment else float(remaining_total)
+                            )
                         else:
                             remaining_principal = principal_amount - amount_paid_so_far
                             interest_due_for_this_loan = principal_amount * 0.06
@@ -271,15 +274,15 @@ else:
                             col_a1, col_a2 = st.columns(2)
                             with col_a1:
                                 pay_interest_input = st.number_input("ชำระดอกเบี้ย (บาท)",
-                                                                   min_value=0.0,
-                                                                   value=max(0.0, remaining_interest),
-                                                                   step=10.0)
+                                                                     min_value=0.0,
+                                                                     value=max(0.0, remaining_interest),
+                                                                     step=10.0)
                             with col_a2:
                                 pay_principal_input = st.number_input("ชำระเงินต้น (บาท)",
-                                                                   min_value=0.0,
-                                                                   value=remaining_principal,
-                                                                   step=100.0)
-                                                                   
+                                                                      min_value=0.0,
+                                                                      value=remaining_principal,
+                                                                      step=100.0)
+                                                                      
                         payment_submitted = st.form_submit_button("บันทึกการชำระเงิน")
 
                     if payment_submitted:
