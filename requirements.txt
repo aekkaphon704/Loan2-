@@ -5,3 +5,4 @@ babel
 fpdf2[text-shaping]
 uharfbuzz
 pytz
+reportlab
