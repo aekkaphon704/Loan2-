@@ -14,19 +14,26 @@ def setup_pdf_styles():
     thai_font_bold = 'THSarabunNew-Bold'
     
     try:
-        # โหลดตัวธรรมดา (มีไฟล์นี้อยู่ในระบบแน่นอนตามรูป)
+        # โหลดตัวธรรมดา
         pdfmetrics.registerFont(TTFont('THSarabunNew', 'fonts/THSarabunNew.ttf'))
-        
-        # พยายามโหลดตัวหนา ถ้าหาไม่เจอให้ใช้ตัวธรรมดาแทน จะได้ไม่พังเป็นกล่องสี่เหลี่ยม
+        # โหลดตัวหนา (ถ้าไม่มีใช้ตัวธรรมดาแทน)
         try:
             pdfmetrics.registerFont(TTFont('THSarabunNew-Bold', 'fonts/THSarabunNew Bold.ttf'))
         except:
             thai_font_bold = 'THSarabunNew'
-            
     except Exception as e:
         print(f"Font Load Error: {e}")
-        thai_font = 'Helvetica'
-        thai_font_bold = 'Helvetica-Bold'
+        try:
+            pdfmetrics.registerFont(TTFont('Sarabun', 'fonts/Sarabun-Regular.ttf'))
+            try:
+                pdfmetrics.registerFont(TTFont('Sarabun-Bold', 'fonts/Sarabun-Bold.ttf'))
+                thai_font_bold = 'Sarabun-Bold'
+            except:
+                thai_font_bold = 'Sarabun'
+            thai_font = 'Sarabun'
+        except:
+            thai_font = 'Helvetica'
+            thai_font_bold = 'Helvetica-Bold'
         
     styles = getSampleStyleSheet()
     style_definitions = [
@@ -52,15 +59,12 @@ def setup_pdf_styles():
             
     return styles, thai_font, thai_font_bold
 
-# ========== ฟังก์ชันกรองคำให้เป็น "ชื่อบัญชี" ==========
+# ========== ฟังก์ชันกรองคำ ==========
 def format_clean_label(label):
-    # ตัวดักจับ Regex: แปลงรหัสสัญญา L-M-xxx-(เลขบัญชี)-xxx ให้เป็นชื่อบัญชีอ่านง่าย
     match = re.search(r'L-M-\d+-(\d+)-\d+', label)
     if match:
         acc_num = match.group(1)
         return f"ยอดหนี้คงเหลือ บัญชี {acc_num}"
-    
-    # ตัดคำว่า "บัญชี บัญชี" ซ้ำซ้อนทิ้ง
     return label.replace("บัญชี บัญชี", "บัญชี")
 
 # ========== สร้าง PDF ==========
@@ -68,7 +72,7 @@ def generate_receipt_pdf(receipt_data):
     pdf_styles, font_normal, font_bold = setup_pdf_styles()
 
     buffer = io.BytesIO()
-    # ตั้งค่าหน้ากระดาษ A4 เว้นขอบกว้างๆ
+    # ตั้งค่าหน้ากระดาษ A4 เว้นขอบกว้างๆ ตามรูป
     doc = SimpleDocTemplate(buffer, pagesize=A4, 
                             leftMargin=2.5*cm, rightMargin=2.5*cm, 
                             topMargin=3.0*cm, bottomMargin=2.5*cm)
@@ -84,40 +88,50 @@ def generate_receipt_pdf(receipt_data):
     elements.append(Paragraph("ใบเสร็จรับเงิน", pdf_styles['TitleStyle']))
     elements.append(Spacer(1, 1.2*cm)) 
 
-    # 2. ข้อมูลลูกหนี้และรายการชำระ
-    data_info = [
-        [Paragraph(f"ชื่อลูกหนี้: <font face='{font_bold}'>{member_name}</font>", pdf_styles['NormalLeft']), ""],
-        [Paragraph(f"วันที่ชำระ: {pay_date}", pdf_styles['NormalLeft']), ""]
-    ]
-    
+    # 2. ข้อมูลลูกหนี้
+    elements.append(Paragraph(f"ชื่อลูกหนี้: {member_name}", pdf_styles['NormalLeft']))
+    elements.append(Spacer(1, 0.2*cm))
+    elements.append(Paragraph(f"วันที่ชำระ: {pay_date}", pdf_styles['NormalLeft']))
+    elements.append(Spacer(1, 0.8*cm))
+
+    # 3. รายการที่ชำระ (ตั้งตารางให้ชิดขวา)
+    data_items = []
     for item in line_items:
         clean_label = format_clean_label(item['label'])
-        data_info.append([
+        data_items.append([
             Paragraph(f"{clean_label}:", pdf_styles['NormalLeft']), 
             Paragraph(f"{item['amount']:,.2f} บาท", pdf_styles['NormalRight'])
         ])
 
-    table_info = Table(data_info, colWidths=[8*cm, 8*cm]) 
-    table_info.setStyle(TableStyle([
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),  
-        ('ALIGN', (1,2), (1,-1), 'RIGHT'),  
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0),
-        ('RIGHTPADDING', (0,0), (-1,-1), 0),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 10), 
-    ]))
-    elements.append(table_info)
+    if data_items:
+        table_items = Table(data_items, colWidths=[8*cm, 8*cm]) 
+        table_items.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),  
+            ('ALIGN', (1,0), (1,-1), 'RIGHT'),  
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8), 
+        ]))
+        elements.append(table_items)
     
     # เส้นคั่นที่ 1 
-    elements.append(Spacer(1, 1.5*cm)) 
+    elements.append(Spacer(1, 1.2*cm)) 
     elements.append(Paragraph("-", pdf_styles['NormalLeft']))
-    elements.append(Spacer(1, 1.0*cm)) 
+    elements.append(Spacer(1, 1.2*cm)) 
 
-    # 3. สรุปยอดคงเหลือ
+    # 4. สรุปยอดคงเหลือ (ห้ามมีค่าปรับ)
     data_summary = []
     for bal in balance_summary:
+        # 💡 ดักกรอง: ถ้ามีคำว่าค่าปรับ ให้ข้ามไปเลย ไม่ต้องพิมพ์
+        if "ค่าปรับ" in bal['label']:
+            continue
+            
         unit = bal.get('unit', 'บาท')
         clean_label = format_clean_label(bal['label']) + ":"
+        
+        # ลบคำว่า (รวมค่าปรับ) ออกถ้ามีหลงมา
+        clean_label = clean_label.replace(" (รวมค่าปรับ)", "")
         
         data_summary.append([
             Paragraph(clean_label, pdf_styles['NormalLeft']), 
@@ -132,16 +146,16 @@ def generate_receipt_pdf(receipt_data):
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
             ('LEFTPADDING', (0,0), (-1,-1), 0),
             ('RIGHTPADDING', (0,0), (-1,-1), 0),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 10), 
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8), 
         ]))
         elements.append(table_summary)
     
     # เส้นคั่นที่ 2
-    elements.append(Spacer(1, 1.5*cm)) 
+    elements.append(Spacer(1, 1.2*cm)) 
     elements.append(Paragraph("-", pdf_styles['NormalLeft']))
     elements.append(Spacer(1, 2.5*cm)) 
 
-    # 4. ลายเซ็น
+    # 5. ลายเซ็น
     signature_table_data = [
         [Paragraph("___________________", pdf_styles['SignatureCenter']), Paragraph("___________________", pdf_styles['SignatureCenter'])],
         [Paragraph("(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ผู้ชำระเงิน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)", pdf_styles['SignatureCenter']), Paragraph("(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ผู้รับเงิน&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)", pdf_styles['SignatureCenter'])]
