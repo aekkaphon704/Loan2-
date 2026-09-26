@@ -176,7 +176,7 @@ else:
         index=None,
         placeholder="กรุณาเลือกชื่อ...",
         key="transaction_member_name",
-        on_change=clear_receipt_on_change # ล้างประวัติใบเสร็จทิ้ง เมื่อเปลี่ยนชื่อสมาชิก
+        on_change=clear_receipt_on_change
     )
 
     if selected_name:
@@ -204,13 +204,21 @@ else:
                 for loan_id in unique_loan_ids:
                     loan_group = active_loans_df[active_loans_df['LoanID'] == loan_id]
                     details = loan_group.iloc[0]
-                    loan_account = details['LoanAccount']
+                    loan_account = str(details['LoanAccount'])
                     due_date_str = str(details['DueDate'])
                     due_date = format_thai_date(due_date_str)
                     
                     principal = safe_float(loan_group['PrincipalAmount'].sum())
-                    paid = safe_float(loan_group['AmountPaid'].sum())
-                    remaining = principal - paid
+                    paid_prin = safe_float(loan_group['AmountPaid'].sum())
+                    paid_int = safe_float(loan_group['InterestPaid'].sum())
+                    
+                    # 💡 แก้ไขยอดค้างใน Dropdown ให้ตรงกับบัญชี 3
+                    if "บัญชี 3" in loan_account:
+                        t_debt = principal + (principal * 0.13 * 4)
+                        t_paid = paid_prin + paid_int
+                        remaining = t_debt - t_paid
+                    else:
+                        remaining = principal - paid_prin
                     
                     option_label = (
                         f"ID: {loan_id} | บช.{loan_account} | ต้น: {principal:,.0f} | "
@@ -251,7 +259,7 @@ else:
                                     f"- ยอดส่งค่างวดเต็ม: **{monthly_installment:,.2f}** บาท/เดือน\n"
                                     f"- ยอดหนี้คงเหลือรวมทั้งหมด: **{remaining_total:,.2f}** บาท")
                             
-                            # 💡 จุดที่แก้ไข: ให้แก้ไขตัวเลขช่องนี้ได้ เผื่อลูกหนี้จ่ายไม่เต็มงวด หรือจ่ายเกิน
+                            # 💡 ช่องกรอกเงินปรับแก้ได้อิสระ
                             pay_amount = st.number_input(
                                 "จำนวนเงินรวมที่ต้องการชำระ (สามารถแก้ไขตัวเลขได้)", 
                                 min_value=0.0, 
@@ -334,7 +342,17 @@ else:
                                 grp = remaining_loans_df[remaining_loans_df['LoanID'] == l_id]
                                 p = safe_float(grp['PrincipalAmount'].sum())
                                 a = safe_float(grp['AmountPaid'].sum())
-                                r = p - a
+                                i_paid = safe_float(grp['InterestPaid'].sum())
+                                acc_type = str(grp.iloc[0]['LoanAccount'])
+                                
+                                # 💡 แก้ไขยอดค้างในใบเสร็จให้ตรงกับบัญชี 3 (บวกรวมดอกเบี้ย)
+                                if "บัญชี 3" in acc_type:
+                                    t_debt = p + (p * 0.13 * 4)
+                                    t_paid = a + i_paid
+                                    r = t_debt - t_paid
+                                else:
+                                    r = p - a
+                                    
                                 if r > 0: 
                                    receipt_balances.append({'label': f'ยอดค้าง สัญญา {l_id}', 'amount': r, 'unit': 'บาท'})
                         
