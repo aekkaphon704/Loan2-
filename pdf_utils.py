@@ -7,17 +7,24 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 # --- ตั้งค่าฟอนต์ภาษาไทย ---
 try:
-    pdfmetrics.registerFont(TTFont('Sarabun', 'fonts/Sarabun-Regular.ttf'))
+    # 💡 ชี้ไปที่ฟอนต์ราชการ THSarabunNew เพื่อแก้ปัญหาสระลอย/ทับกัน
+    pdfmetrics.registerFont(TTFont('THSarabunNew', 'fonts/THSarabunNew.ttf'))
     try:
-        pdfmetrics.registerFont(TTFont('Sarabun-Bold', 'fonts/Sarabun-Bold.ttf'))
-        FONT_BOLD = 'Sarabun-Bold'
+        pdfmetrics.registerFont(TTFont('THSarabunNew-Bold', 'fonts/THSarabunNew Bold.ttf'))
+        FONT_BOLD = 'THSarabunNew-Bold'
     except:
-        FONT_BOLD = 'Sarabun'
-    FONT_NAME = 'Sarabun'
+        FONT_BOLD = 'THSarabunNew'
+    FONT_NAME = 'THSarabunNew'
 except Exception as e:
     print(f"Font Load Error: {e}")
-    FONT_NAME = 'Helvetica'
-    FONT_BOLD = 'Helvetica-Bold'
+    # ระบบสำรอง: ถ้าลืมใส่ THSarabunNew จะดึง Sarabun ตัวเดิมมาแก้ขัด (แต่สระอาจจะลอย)
+    try:
+        pdfmetrics.registerFont(TTFont('Sarabun', 'fonts/Sarabun-Regular.ttf'))
+        FONT_NAME = 'Sarabun'
+        FONT_BOLD = 'Sarabun'
+    except:
+        FONT_NAME = 'Helvetica'
+        FONT_BOLD = 'Helvetica-Bold'
 
 def generate_receipt_pdf(receipt_data):
     buffer = io.BytesIO()
@@ -30,7 +37,7 @@ def generate_receipt_pdf(receipt_data):
     balance_summary = receipt_data.get('balance_summary', [])
 
     # --- 1. หัวกระดาษ (ตรงกลาง) ---
-    y_pos = 730  # ขยับลงมาจากขอบบนนิดหน่อย
+    y_pos = 730  
     c.setFont(FONT_BOLD, 26)
     c.drawCentredString(width / 2.0, y_pos, "ใบเสร็จรับเงิน")
 
@@ -47,9 +54,8 @@ def generate_receipt_pdf(receipt_data):
     c.drawString(70, y_pos, "รายการที่ชำระ:")
     
     y_pos -= 35
-    c.setFont(FONT_NAME, 17) # ปรับขนาดฟอนต์ให้สระไม่เบียดกันเกินไป
+    c.setFont(FONT_NAME, 17) 
     for item in line_items:
-        # ตัดคำว่า "บัญชี บัญชี" ที่ซ้ำซ้อนออก
         clean_label = item['label'].replace("บัญชี บัญชี", "บัญชี")
         c.drawString(100, y_pos, clean_label)
         c.drawRightString(520, y_pos, f"{item['amount']:,.2f} บาท")
@@ -63,21 +69,28 @@ def generate_receipt_pdf(receipt_data):
     # --- 4. สรุปยอดคงเหลือ ---
     for bal in balance_summary:
         unit = bal.get('unit', 'บาท')
-        c.drawString(70, y_pos, bal['label'] + ":")
-        c.drawRightString(520, y_pos, f"{bal['amount']:,.2f} {unit}")
+        label_text = bal['label']
+        
+        # 💡 แก้ปัญหาข้อความชนตัวเลข: ถ้ารหัสสัญญามีคำว่า L-M- (แปลว่ายาวแน่ๆ) ให้ปัดบรรทัด
+        if len(label_text) > 25 and "L-M-" in label_text:
+            parts = label_text.split(" L-M-")
+            c.drawString(70, y_pos, parts[0] + ":")
+            y_pos -= 25 # ปัดตัวเลขรหัสลงมาอีก 1 บรรทัด
+            c.drawString(100, y_pos, "รหัส: L-M-" + parts[1])
+            c.drawRightString(520, y_pos, f"{bal['amount']:,.2f} {unit}")
+        else:
+            c.drawString(70, y_pos, label_text + ":")
+            c.drawRightString(520, y_pos, f"{bal['amount']:,.2f} {unit}")
+        
         y_pos -= 30
 
     # เส้นประคั่นรายการด้านล่าง
     y_pos -= 10
     c.drawString(70, y_pos, "-------------------------------------------------------------------------------------------------------------")
 
-    # --- 5. ลายเซ็นต์ (Dynamic: ขยับตามข้อมูล) ---
-    # ให้เว้นระยะจากบรรทัดสุดท้ายลงมา 120 พิกเซล (ไม่ตกลงไปก้นกระดาษ)
+    # --- 5. ลายเซ็นต์ ---
     sig_y = y_pos - 120 
-    
-    # ดักไว้ไม่ให้ลายเซ็นตกขอบกระดาษถ้ารายการยาวมาก
-    if sig_y < 100: 
-        sig_y = 100
+    if sig_y < 100: sig_y = 100
 
     c.setFont(FONT_NAME, 17)
     c.drawString(90, sig_y + 25, "_________________________")
