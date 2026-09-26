@@ -14,9 +14,7 @@ def setup_pdf_styles():
     thai_font_bold = 'THSarabunNew-Bold'
     
     try:
-        # โหลดตัวธรรมดา
         pdfmetrics.registerFont(TTFont('THSarabunNew', 'fonts/THSarabunNew.ttf'))
-        # โหลดตัวหนา (ถ้าไม่มีใช้ตัวธรรมดาแทน)
         try:
             pdfmetrics.registerFont(TTFont('THSarabunNew-Bold', 'fonts/THSarabunNew Bold.ttf'))
         except:
@@ -36,11 +34,13 @@ def setup_pdf_styles():
             thai_font_bold = 'Helvetica-Bold'
         
     styles = getSampleStyleSheet()
+    # 💡 เพิ่มสไตล์ตัวหนาชิดขวา สำหรับยอดรวม
     style_definitions = [
         ('TitleStyle', thai_font_bold, 24, TA_CENTER, 20), 
         ('NormalLeft', thai_font, 16, TA_LEFT, 0),
         ('NormalRight', thai_font, 16, TA_RIGHT, 0),
         ('BoldLeft', thai_font_bold, 16, TA_LEFT, 0),
+        ('BoldRight', thai_font_bold, 16, TA_RIGHT, 0), 
         ('SignatureCenter', thai_font, 16, TA_CENTER, 0), 
     ]
     
@@ -72,7 +72,6 @@ def generate_receipt_pdf(receipt_data):
     pdf_styles, font_normal, font_bold = setup_pdf_styles()
 
     buffer = io.BytesIO()
-    # ตั้งค่าหน้ากระดาษ A4 เว้นขอบกว้างๆ ตามรูป
     doc = SimpleDocTemplate(buffer, pagesize=A4, 
                             leftMargin=2.5*cm, rightMargin=2.5*cm, 
                             topMargin=3.0*cm, bottomMargin=2.5*cm)
@@ -94,14 +93,23 @@ def generate_receipt_pdf(receipt_data):
     elements.append(Paragraph(f"วันที่ชำระ: {pay_date}", pdf_styles['NormalLeft']))
     elements.append(Spacer(1, 0.8*cm))
 
-    # 3. รายการที่ชำระ (ตั้งตารางให้ชิดขวา)
+    # 3. รายการที่ชำระ และคำนวณยอดรวม
     data_items = []
+    total_current_pay = 0
     for item in line_items:
         clean_label = format_clean_label(item['label'])
+        amt = float(item.get('amount', 0))
         data_items.append([
             Paragraph(f"{clean_label}:", pdf_styles['NormalLeft']), 
-            Paragraph(f"{item['amount']:,.2f} บาท", pdf_styles['NormalRight'])
+            Paragraph(f"{amt:,.2f} บาท", pdf_styles['NormalRight'])
         ])
+        total_current_pay += amt
+
+    # 💡 เพิ่มบรรทัด "รวมยอดจ่ายทั้งหมด" ด้วยตัวอักษรหนา
+    data_items.append([
+        Paragraph("รวมยอดจ่ายทั้งหมด:", pdf_styles['BoldLeft']), 
+        Paragraph(f"{total_current_pay:,.2f} บาท", pdf_styles['BoldRight'])
+    ])
 
     if data_items:
         table_items = Table(data_items, colWidths=[8*cm, 8*cm]) 
@@ -123,14 +131,11 @@ def generate_receipt_pdf(receipt_data):
     # 4. สรุปยอดคงเหลือ (ห้ามมีค่าปรับ)
     data_summary = []
     for bal in balance_summary:
-        # 💡 ดักกรอง: ถ้ามีคำว่าค่าปรับ ให้ข้ามไปเลย ไม่ต้องพิมพ์
         if "ค่าปรับ" in bal['label']:
             continue
             
         unit = bal.get('unit', 'บาท')
         clean_label = format_clean_label(bal['label']) + ":"
-        
-        # ลบคำว่า (รวมค่าปรับ) ออกถ้ามีหลงมา
         clean_label = clean_label.replace(" (รวมค่าปรับ)", "")
         
         data_summary.append([
